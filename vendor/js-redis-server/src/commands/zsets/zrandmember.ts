@@ -1,0 +1,82 @@
+import { asciiUpperCase } from '../../core/ascii-case'
+import { defineCommand } from '../../core/command-definition'
+import { t } from '../../core/command-schema'
+import { WrongNumberOfArgumentsError, errors } from '../../core/redis-error'
+import { RedisResult } from '../../core/redis-result'
+import { RedisValue } from '../../core/redis-value'
+import type { RedisSortedSetMember } from '../../state/data-types'
+import { array, bulk, scorePairs } from '../helpers'
+import { parseLexLimitInt } from './lex'
+
+type ZrandmemberArgs = {
+  key: Buffer
+  count?: number
+  withScores: boolean
+}
+
+function createZrandmemberSchema() {
+  const layout = { min: 1, keys: [0] }
+  return t.custom<ZrandmemberArgs>(layout, (input, index, ctx) => {
+    const key = input[index]
+    if (!key) throw new WrongNumberOfArgumentsError(ctx.commandName)
+
+    let cursor = index + 1
+    let count: number | undefined
+    let withScores = false
+
+    if (cursor < input.length) {
+      count = parseLexLimitInt(input[cursor]!)
+      cursor++
+      if (cursor < input.length) {
+        if (asciiUpperCase(input[cursor]!.toString()) !== 'WITHSCORES') {
+          throw errors.syntax()
+        }
+        withScores = true
+        cursor++
+      }
+    }
+
+    if (cursor < input.length) throw errors.syntax()
+    return { value: { key, count, withScores }, nextIndex: input.length }
+  })
+}
+
+export const zrandmemberCommand = defineCommand({
+  name: 'zrandmember',
+  schema: createZrandmemberSchema(),
+  flags: ['readonly'],
+  keys: args => [args.key],
+  execute: (args, ctx) => {
+    const zset = ctx.db.getSortedSet(args.key)
+
+    if (args.count === undefined) {
+      if (!zset || zset.members.size === 0) return bulk(null)
+      const all = Array.from(zset.members.values())
+      const pick = all[Math.floor(Math.random() * all.length)]
+      return bulk(pick.member)
+    }
+
+    if (!zset || zset.members.size === 0) return array([])
+    const all = Array.from(zset.members.values())
+    const chosen: RedisSortedSetMember[] = []
+
+    if (args.count < 0) {
+      const n = -args.count
+      for (let i = 0; i < n; i++) {
+        chosen.push(all[Math.floor(Math.random() * all.length)])
+      }
+    } else {
+      const shuffled = all.slice()
+      for (let i = shuffled.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1))
+        ;[shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
+      }
+      chosen.push(...shuffled.slice(0, Math.min(args.count, shuffled.length)))
+    }
+
+    if (args.withScores) {
+      return RedisResult.create(scorePairs(chosen))
+    }
+    return array(chosen.map(entry => RedisValue.bulkString(entry.member)))
+  },
+})

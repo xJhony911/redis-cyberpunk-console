@@ -1,0 +1,373 @@
+import { asciiLowerCase } from '../core/ascii-case'
+import type { CommandDefinition } from '../core/command-definition'
+import { CommandExecutor } from '../core/command-executor'
+import { CommandRegistry } from '../core/command-registry'
+import {
+  gateSatisfied,
+  resolveCompatibilityProfile,
+  type CompatibilityProfile,
+  type CompatibilitySpec,
+} from '../core/compatibility'
+import type { ExecutionPolicy } from '../core/execution-policies'
+import {
+  createAuthPolicy,
+  createNoMultiPolicy,
+  createMonitorClientPolicy,
+  createClientPausePolicy,
+  createSubscribedModePolicy,
+  createTransactionPolicy,
+} from '../core/execution-policies'
+import { bitmapsCommands } from './bitmaps'
+import { standaloneClusterCommands } from './cluster'
+import { commandCommand } from './command'
+import { configCommands } from './config'
+import { connectionCommands } from './connection'
+import { geoCommands } from './geo'
+import { hashesCommands } from './hashes'
+import { hyperloglogCommands } from './hyperloglog'
+import { keysCommands } from './keys'
+import { listsCommands } from './lists'
+import { monitorCommands } from './monitor'
+import { pubsubCommands } from './pubsub'
+import { scanCommands } from './scan'
+import { scriptsCommands } from './scripts'
+import { setsCommands } from './sets'
+import { streamsCommands } from './streams'
+import { stringsCommands } from './strings'
+import { lcsCommands } from './lcs'
+import { transactionCommands } from './transactions'
+import { zsetsCommands } from './zsets'
+import { dumpRestoreCommands } from './dump-restore'
+
+export const redisCommandDefinitions: readonly CommandDefinition[] = [
+  ...connectionCommands,
+  commandCommand,
+  ...configCommands,
+  ...transactionCommands,
+  ...monitorCommands,
+  ...stringsCommands,
+  ...lcsCommands,
+  ...bitmapsCommands,
+  ...hyperloglogCommands,
+  ...keysCommands,
+  ...dumpRestoreCommands,
+  ...scanCommands,
+  ...hashesCommands,
+  ...listsCommands,
+  ...setsCommands,
+  ...zsetsCommands,
+  ...geoCommands,
+  ...pubsubCommands,
+  ...streamsCommands,
+  ...scriptsCommands,
+]
+
+/**
+ * The registry every executor runs on: {@link redisCommandDefinitions}, then
+ * the standalone CLUSTER / READONLY / READWRITE (#537), then
+ * `extraCommands`. An extra command named like one of those three replaces
+ * it, which is how a cluster node's {@link createClusterCommands} takes over;
+ * any other name clash throws.
+ */
+export function createRedisCommandRegistry(
+  extraCommands: readonly CommandDefinition[] = [],
+  profile: CompatibilityProfile = resolveCompatibilityProfile(),
+): CommandRegistry {
+  const registry = new CommandRegistry()
+  registry.registerAll(
+    filterCompatibleCommands(redisCommandDefinitions, profile),
+  )
+  const extraNames = new Set(
+    extraCommands.map(definition => asciiLowerCase(definition.name)),
+  )
+  registry.registerAll(
+    filterCompatibleCommands(
+      standaloneClusterCommands.filter(
+        definition => !extraNames.has(definition.name),
+      ),
+      profile,
+    ),
+  )
+  registry.registerAll(filterCompatibleCommands(extraCommands, profile))
+  return registry
+}
+
+export function createRedisCommandExecutor(options?: {
+  extraCommands?: readonly CommandDefinition[]
+  policies?: readonly ExecutionPolicy[]
+  compatibility?: CompatibilitySpec
+}): CommandExecutor {
+  const profile = resolveCompatibilityProfile(options?.compatibility)
+  return new CommandExecutor({
+    registry: createRedisCommandRegistry(options?.extraCommands, profile),
+    profile,
+    policies: [
+      createAuthPolicy(),
+      createNoMultiPolicy(),
+      createSubscribedModePolicy(),
+      ...(options?.policies ?? []),
+      createMonitorClientPolicy(),
+      createClientPausePolicy(),
+      createTransactionPolicy(),
+    ],
+  })
+}
+
+function filterCompatibleCommands(
+  definitions: readonly CommandDefinition[],
+  profile: CompatibilityProfile,
+): CommandDefinition[] {
+  return definitions.filter(
+    definition =>
+      (definition.since === undefined ||
+        gateSatisfied(definition.since, profile)) &&
+      (definition.until === undefined ||
+        !gateSatisfied(definition.until, profile)),
+  )
+}
+
+export {
+  aclCommand,
+  clientCommand,
+  pingCommand,
+  quitCommand,
+  selectCommand,
+  shutdownCommand,
+  slowlogCommand,
+  connectionCommands,
+} from './connection'
+export { monitorCommand, monitorCommands } from './monitor'
+export {
+  createClusterCommands,
+  readonlyCommand,
+  readwriteCommand,
+  standaloneClusterCommands,
+} from './cluster'
+export { commandCommand } from './command'
+export { configCommand, configCommands } from './config'
+export {
+  getCommand,
+  setCommand,
+  mgetCommand,
+  appendCommand,
+  strlenCommand,
+  incrCommand,
+  decrCommand,
+  incrbyCommand,
+  decrbyCommand,
+  incrbyfloatCommand,
+  getsetCommand,
+  getdelCommand,
+  delifeqCommand,
+  setnxCommand,
+  setexCommand,
+  psetexCommand,
+  msetCommand,
+  msetnxCommand,
+  getrangeCommand,
+  substrCommand,
+  setrangeCommand,
+  getexCommand,
+  stringsCommands,
+} from './strings'
+export {
+  bitmapsCommands,
+  setbitCommand,
+  getbitCommand,
+  bitcountCommand,
+  bitposCommand,
+  bitopCommand,
+  bitfieldCommand,
+  bitfieldRoCommand,
+} from './bitmaps'
+export {
+  hyperloglogCommands,
+  pfaddCommand,
+  pfcountCommand,
+  pfmergeCommand,
+} from './hyperloglog'
+export {
+  discardCommand,
+  execCommand,
+  multiCommand,
+  transactionCommands,
+  unwatchCommand,
+  watchCommand,
+} from './transactions'
+export {
+  copyCommand,
+  dbsizeCommand,
+  delCommand,
+  existsCommand,
+  expireCommand,
+  expireatCommand,
+  expiretimeCommand,
+  pexpiretimeCommand,
+  flushallCommand,
+  flushdbCommand,
+  keysCommands,
+  moveCommand,
+  persistCommand,
+  pexpireCommand,
+  pexpireatCommand,
+  pttlCommand,
+  randomkeyCommand,
+  renameCommand,
+  renamenxCommand,
+  sortCommand,
+  sortRoCommand,
+  touchCommand,
+  ttlCommand,
+  typeCommand,
+  unlinkCommand,
+} from './keys'
+export {
+  hscanCommand,
+  keysCommand,
+  scanCommand,
+  scanCommands,
+  sscanCommand,
+  zscanCommand,
+} from './scan'
+export {
+  listsCommands,
+  blmpopCommand,
+  blmoveCommand,
+  blpopCommand,
+  brpopCommand,
+  brpoplpushCommand,
+  lindexCommand,
+  linsertCommand,
+  llenCommand,
+  lmoveCommand,
+  lmpopCommand,
+  lpopCommand,
+  lposCommand,
+  lpushCommand,
+  lpushxCommand,
+  lrangeCommand,
+  lremCommand,
+  lsetCommand,
+  ltrimCommand,
+  rpopCommand,
+  rpoplpushCommand,
+  rpushCommand,
+  rpushxCommand,
+} from './lists'
+export {
+  publishCommand,
+  psubscribeCommand,
+  pubsubCommand,
+  pubsubCommands,
+  punsubscribeCommand,
+  spublishCommand,
+  ssubscribeCommand,
+  subscribeCommand,
+  sunsubscribeCommand,
+  unsubscribeCommand,
+} from './pubsub'
+export {
+  hashesCommands,
+  hexistsCommand,
+  hgetallCommand,
+  hgetdelCommand,
+  hgetexCommand,
+  hsetexCommand,
+  hgetCommand,
+  hdelCommand,
+  hincrbyfloatCommand,
+  hincrbyCommand,
+  hpersistCommand,
+  hpttlCommand,
+  httlCommand,
+  hkeysCommand,
+  hlenCommand,
+  hmgetCommand,
+  hmsetCommand,
+  hrandfieldCommand,
+  hsetnxCommand,
+  hsetCommand,
+  hstrlenCommand,
+  hvalsCommand,
+} from './hashes'
+export {
+  setsCommands,
+  saddCommand,
+  scardCommand,
+  sdiffCommand,
+  sdiffstoreCommand,
+  sinterCommand,
+  sintercardCommand,
+  sinterstoreCommand,
+  sismemberCommand,
+  smismemberCommand,
+  smembersCommand,
+  smoveCommand,
+  spopCommand,
+  srandmemberCommand,
+  sremCommand,
+  sunionCommand,
+  sunionstoreCommand,
+} from './sets'
+export {
+  evalCommand,
+  evalRoCommand,
+  evalshaCommand,
+  evalshaRoCommand,
+  fcallCommand,
+  fcallRoCommand,
+  functionCommand,
+  scriptCommand,
+  scriptsCommands,
+} from './scripts'
+export {
+  xackCommand,
+  xaddCommand,
+  xautoclaimCommand,
+  xclaimCommand,
+  xdelCommand,
+  xgroupCommand,
+  xinfoCommand,
+  xlenCommand,
+  xpendingCommand,
+  xreadCommand,
+  xreadgroupCommand,
+  xrevrangeCommand,
+  xrangeCommand,
+  streamsCommands,
+  xtrimCommand,
+} from './streams'
+export {
+  geoCommands,
+  geoaddCommand,
+  geoposCommand,
+  geodistCommand,
+  geohashCommand,
+  geosearchCommand,
+  geosearchstoreCommand,
+  georadiusCommand,
+  georadiusRoCommand,
+  georadiusbymemberCommand,
+  georadiusbymemberRoCommand,
+} from './geo'
+export {
+  zsetsCommands,
+  zaddCommand,
+  zremCommand,
+  zcardCommand,
+  zrankCommand,
+  zrevrankCommand,
+  zscoreCommand,
+  zincrbyCommand,
+  zrangeCommand,
+  zrevrangeCommand,
+  zrangebyscoreCommand,
+  zremrangebyscoreCommand,
+  zcountCommand,
+  zpopminCommand,
+  zpopmaxCommand,
+  bzpopminCommand,
+  bzpopmaxCommand,
+  zmpopCommand,
+  bzmpopCommand,
+} from './zsets'

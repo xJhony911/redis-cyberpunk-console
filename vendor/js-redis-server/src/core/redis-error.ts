@@ -1,0 +1,732 @@
+import type { CompatibilityProfile } from './compatibility'
+
+export class RedisCommandError extends Error {
+  /**
+   * The byte-exact reply body, set only when the error was built from a
+   * Buffer. `Error.message` is a `string`, so an error that echoes raw client
+   * bytes (an unknown subcommand, say) would lose them to U+FFFD on the way to
+   * the wire; this keeps the original alongside the lossy `message` used for
+   * logging and assertions. Read it through {@link errorReplyBody}.
+   */
+  readonly messageBytes?: Buffer
+
+  constructor(
+    message: string | Buffer,
+    public readonly code = 'ERR',
+  ) {
+    super(typeof message === 'string' ? message : message.toString())
+    this.name = code
+    if (typeof message !== 'string') {
+      this.messageBytes = message
+    }
+  }
+}
+
+/**
+ * The reply body to put on the wire for a {@link RedisCommandError} — its raw
+ * bytes when it carries any, otherwise its message. Every conversion from a
+ * caught error to a reply goes through this (or {@link RedisResult.fromError},
+ * which wraps it); reading `error.message` directly drops the bytes.
+ */
+export function errorReplyBody(error: RedisCommandError): string | Buffer {
+  return error.messageBytes ?? error.message
+}
+
+/** {@link errorReplyBody} for the callers that need a Buffer either way. */
+export function errorReplyBytes(error: RedisCommandError): Buffer {
+  return error.messageBytes ?? Buffer.from(error.message)
+}
+
+// A subclass is kept only when (a) code tells it apart with `instanceof`
+// (WrongNumberOfArguments, UnknownRedisCommand and UnknownSubcommand in the
+// executor and Lua bridge; WrongType in tests), or (b) it is one of the
+// errors the pipeline raises outside any single command: ClusterPolicy's
+// MOVED / CROSSSLOT / CLUSTERDOWN, the executor's EXECABORT for a malformed
+// EXEC, AuthPolicy's NOAUTH, and the state layer's WRONGTYPE. Commands reuse
+// the last two for the same condition (HELLO's NOAUTH, a command's own type
+// check), and that is the only way a command throws a subclass: every other
+// error a command raises is a plain RedisCommandError, whatever its code
+// prefix. A fixed message raised from more than one place, or one whose
+// wording depends on the profile, is a factory on `errors` below; a message
+// raised from exactly one place may stay inline there.
+
+export class WrongNumberOfArgumentsError extends RedisCommandError {
+  constructor(commandName: string) {
+    super(`wrong number of arguments for '${commandName}' command`)
+  }
+}
+
+/** A command was issued before authenticating on a password-protected server. */
+export class NoAuthError extends RedisCommandError {
+  constructor(message = 'Authentication required.') {
+    super(message, 'NOAUTH')
+  }
+}
+
+export class WrongTypeRedisError extends RedisCommandError {
+  constructor() {
+    super(
+      'Operation against a key holding the wrong kind of value',
+      'WRONGTYPE',
+    )
+  }
+}
+
+export class RedisCrossSlotError extends RedisCommandError {
+  constructor() {
+    super(`Keys in request don't hash to the same slot`, 'CROSSSLOT')
+  }
+}
+
+export class RedisMovedError extends RedisCommandError {
+  constructor(slot: number, host: string, port: number) {
+    super(`${slot} ${host}:${port}`, 'MOVED')
+  }
+}
+
+/** A key of a MIGRATING slot is not here: ask the target node (`-ASK`). */
+export class RedisAskError extends RedisCommandError {
+  constructor(slot: number, host: string, port: number) {
+    super(`${slot} ${host}:${port}`, 'ASK')
+  }
+}
+
+/**
+ * A multi-key command in a slot being resharded finds some of its keys on
+ * this node and some not (`-TRYAGAIN`).
+ */
+export class RedisTryAgainError extends RedisCommandError {
+  constructor() {
+    super('Multiple keys request during rehashing of slot', 'TRYAGAIN')
+  }
+}
+
+export class RedisClusterDownError extends RedisCommandError {
+  constructor() {
+    super('Hash slot not served', 'CLUSTERDOWN')
+  }
+}
+
+/** EXEC itself is malformed (e.g. wrong arity) — discards the transaction immediately. */
+export class ExecCommandAbortError extends RedisCommandError {
+  constructor(reason: string) {
+    super(`Transaction discarded because of: ${reason}`, 'EXECABORT')
+  }
+}
+
+/** The args part stops growing once it reaches this many bytes. */
+const UNKNOWN_COMMAND_ARGS_BUDGET = 128
+
+/**
+ * The two shapes of the reply, per `error.unknown-command-wording`. Redis
+ * 7.0+ (and every Valkey) prints
+ *
+ *     unknown command '%.128s', with args beginning with: %s
+ *
+ * growing the args part by `'%.*s' ` per argument; Redis 6.2 prints
+ *
+ *     unknown command `%s`, with args beginning with: %s
+ *
+ * growing it by `` `%.*s`, `` instead, and does not cap the name. Either way
+ * the precision is `128 - <bytes so far>` and args are added while the part is
+ * under 128 bytes, so the quoting and separator bytes count against the
+ * budget: 6.2, spending one more byte per arg, echoes fewer of them.
+ */
+const UNKNOWN_COMMAND_FORMATS = {
+  current: { quote: "'", separator: ' ', nameCap: 128 },
+  legacy: { quote: '`', separator: ', ', nameCap: Infinity },
+} as const
+
+/**
+ * The name and args are echoed as raw bytes, each cut at its first NUL (`%s`
+ * reads a C string); the cut is by byte, so it can split a UTF-8 sequence, and
+ * only the byte budget, not an argument count, ends the list. CR/LF are mapped
+ * to spaces by the encoder, as for every error reply (#384).
+ */
+export class UnknownRedisCommandError extends RedisCommandError {
+  constructor(
+    commandName: string | Buffer,
+    args: readonly Buffer[],
+    profile?: CompatibilityProfile,
+  ) {
+    const { quote, separator, nameCap } =
+      profile && !profile.has('error.unknown-command-wording')
+        ? UNKNOWN_COMMAND_FORMATS.legacy
+        : UNKNOWN_COMMAND_FORMATS.current
+    const open = Buffer.from(quote)
+    const close = Buffer.from(`${quote}${separator}`)
+    const parts: Buffer[] = []
+    let argsLength = 0
+    for (
+      let i = 0;
+      i < args.length && argsLength < UNKNOWN_COMMAND_ARGS_BUDGET;
+      i++
+    ) {
+      const arg = cString(args[i], UNKNOWN_COMMAND_ARGS_BUDGET - argsLength)
+      parts.push(open, arg, close)
+      argsLength += open.length + arg.length + close.length
+    }
+
+    const bytes = Buffer.concat([
+      Buffer.from(`unknown command ${quote}`),
+      cString(Buffer.from(commandName), nameCap),
+      Buffer.from(`${quote}, with args beginning with: `),
+      ...parts,
+    ])
+    // Pass a string when it round-trips: a Buffer message also sets
+    // `messageBytes`, which rides into the RedisValue, and callers that compare
+    // error values structurally would then see a different shape for the same
+    // wire text.
+    const text = bytes.toString()
+    super(Buffer.from(text).equals(bytes) ? text : bytes)
+  }
+}
+
+/**
+ * A container was given a subcommand it does not have (`CONFIG BOGUS`). The
+ * body is profile-specific and built only by `unknownSubcommandError` in
+ * src/core/subcommand-errors.ts; the class exists so the Lua runtime can tell a
+ * failed 7.0+ subcommand *lookup* in `CommandExecutor.plan()` apart from other
+ * planning errors, and answer it like an unknown command (#439).
+ */
+export class UnknownSubcommandError extends RedisCommandError {}
+
+/** `%.<precision>s` over raw bytes: stop at the first NUL or `precision`. */
+function cString(value: Buffer, precision: number): Buffer {
+  const nul = value.indexOf(0)
+  const end = nul === -1 ? value.length : nul
+  return value.subarray(0, Math.min(end, precision))
+}
+
+/**
+ * Fixed-text client-visible errors. Each call returns a fresh
+ * {@link RedisCommandError}; the strings are the exact wire text of real
+ * Redis and are compat-tested byte for byte, so change them only against a
+ * real server.
+ */
+const GEO_STORE_WITH_OPTIONS_6_2 =
+  'STORE option in GEORADIUS is not compatible with WITHDIST, WITHHASH and WITHCOORDS options'
+
+export const errors = Object.freeze({
+  syntax: () => new RedisCommandError('syntax error'),
+  /**
+   * Redis 6.2's own odd-count error for a command whose tail is pairs (MSET /
+   * MSETNX say `MSET`, XADD says `XADD`); see `error.odd-pairs-arity-wording`.
+   */
+  legacyOddPairs: (command: 'MSET' | 'XADD') =>
+    new RedisCommandError(`wrong number of arguments for ${command}`),
+
+  // Auth / handshake
+  /** `AUTH <password>` (single-arg) when the server has no `requirepass` set. */
+  noPasswordConfigured: () =>
+    new RedisCommandError(
+      'AUTH <password> called without any password configured for the default user. Are you sure your configuration is correct?',
+    ),
+  /** Wrong username/password pair on AUTH or HELLO AUTH. */
+  wrongPass: () =>
+    new RedisCommandError(
+      'invalid username-password pair or user is disabled.',
+      'WRONGPASS',
+    ),
+  /** `HELLO <version>` with a syntactically valid but unsupported protocol version. */
+  noProto: () =>
+    new RedisCommandError('unsupported protocol version', 'NOPROTO'),
+  /** `HELLO <version>` where version is not a valid integer at all. */
+  helloProtocolNotInteger: () =>
+    new RedisCommandError('Protocol version is not an integer or out of range'),
+  /**
+   * A keyspace command (readonly, write or may_replicate) sent on a MONITOR
+   * connection, which Redis treats as a replica. 6.2 misspells it; see
+   * `error.replica-keyspace-wording`.
+   */
+  replicaKeyspace: (profile: CompatibilityProfile) =>
+    new RedisCommandError(
+      profile.has('error.replica-keyspace-wording')
+        ? "Replica can't interact with the keyspace"
+        : "Replica can't interract with the keyspace",
+    ),
+  /**
+   * A command other than (P|S)SUBSCRIBE / (P|S)UNSUBSCRIBE / PING / QUIT /
+   * RESET sent on a RESP2 connection in subscribed mode. `name` is the
+   * command-table entry the call was looked up as: `config|get` from 7.0,
+   * the parent `config` on 6.2. 6.2 has no sharded Pub/Sub, so its list
+   * reads `(P)SUBSCRIBE / (P)UNSUBSCRIBE`; see
+   * `error.subscribed-context-wording`.
+   */
+  subscribedContext: (name: string, profile: CompatibilityProfile) =>
+    new RedisCommandError(
+      profile.has('error.subscribed-context-wording')
+        ? `Can't execute '${name}': only (P|S)SUBSCRIBE / (P|S)UNSUBSCRIBE / PING / QUIT / RESET are allowed in this context`
+        : `Can't execute '${name}': only (P)SUBSCRIBE / (P)UNSUBSCRIBE / PING / QUIT / RESET are allowed in this context`,
+    ),
+
+  /**
+   * (P|S)UNSUBSCRIBE on a connection with no subscription of any kind, on
+   * valkey 8.0.0 / 8.0.1 only (`pubsub.unsubscribe-nosub`). `name` is the
+   * lowercase command name.
+   */
+  notSubscribed: (name: string) =>
+    new RedisCommandError(
+      `'${name}' command executed not in subscribed mode`,
+      'NOSUB',
+    ),
+
+  // Numbers
+  expectedInteger: () =>
+    new RedisCommandError('value is not an integer or out of range'),
+  incrDecrOverflow: () =>
+    new RedisCommandError('increment or decrement would overflow'),
+  decrOverflow: () => new RedisCommandError('decrement would overflow'),
+  expectedFloat: () => new RedisCommandError('value is not a valid float'),
+  incrByFloatNanOrInfinity: () =>
+    new RedisCommandError('increment would produce NaN or Infinity'),
+  /** A non-ALPHA SORT met an element that does not parse as a double. */
+  sortScoreNotDouble: () =>
+    new RedisCommandError("One or more scores can't be converted into double"),
+  resultingScoreNaN: () =>
+    new RedisCommandError('resulting score is not a number (NaN)'),
+  minMaxNotFloat: () => new RedisCommandError('min or max is not a float'),
+  positiveCount: () =>
+    new RedisCommandError('value is out of range, must be positive'),
+  offsetOutOfRange: () => new RedisCommandError('offset is out of range'),
+  hashValueNotInteger: () =>
+    new RedisCommandError('hash value is not an integer'),
+  hashValueNotFloat: () => new RedisCommandError('hash value is not a float'),
+
+  // Lists / blocking
+  /** Redis 7.0.1 added the negative-rank hint; see `error.lpos-rank-zero-hint`. */
+  lposRankZero: (profile: CompatibilityProfile) =>
+    new RedisCommandError(
+      profile.has('error.lpos-rank-zero-hint')
+        ? "RANK can't be zero: use 1 to start from the first match, 2 from the second ... or use negative to start from the end of the list"
+        : "RANK can't be zero: use 1 to start from the first match, 2 from the second, ...",
+    ),
+  lposCountNegative: () => new RedisCommandError("COUNT can't be negative"),
+  lposMaxlenNegative: () => new RedisCommandError("MAXLEN can't be negative"),
+  timeoutNotFloat: () =>
+    new RedisCommandError('timeout is not a float or out of range'),
+  timeoutNegative: () => new RedisCommandError('timeout is negative'),
+  timeoutOutOfRange: () => new RedisCommandError('timeout is out of range'),
+  /** `getRangeLongFromObjectOrReply(-LONG_MAX, LONG_MAX)`, Redis 7.2+. */
+  lposRankOutOfRange: () =>
+    new RedisCommandError(
+      'value is out of range, value must between -9223372036854775807 and 9223372036854775807',
+    ),
+  indexOutOfRange: () => new RedisCommandError('index out of range'),
+  noSuchKey: () => new RedisCommandError('no such key'),
+
+  // Option conflicts
+  zaddNxXxConflict: () =>
+    new RedisCommandError(
+      'XX and NX options at the same time are not compatible',
+    ),
+  zaddGtLtNxConflict: () =>
+    new RedisCommandError(
+      'GT, LT, and/or NX options at the same time are not compatible',
+    ),
+  expireNxXxGtLtConflict: () =>
+    new RedisCommandError(
+      'NX and XX, GT or LT options at the same time are not compatible',
+    ),
+  expireGtLtConflict: () =>
+    new RedisCommandError(
+      'GT and LT options at the same time are not compatible',
+    ),
+  unsupportedOption: (option: string) =>
+    new RedisCommandError(`Unsupported option ${option}`),
+  zaddIncrPair: () =>
+    new RedisCommandError(
+      'INCR option supports a single increment-element pair',
+    ),
+  /**
+   * Redis 6.2 names the command bare (`in set`); 7.0 quotes it, see
+   * `error.expire-time-quoted-wording`. Without a profile (commands newer
+   * than 7.0, such as HEXPIRE) the quoted form.
+   */
+  invalidExpireTime: (commandName: string, profile?: CompatibilityProfile) =>
+    new RedisCommandError(
+      profile && !profile.has('error.expire-time-quoted-wording')
+        ? `invalid expire time in ${commandName}`
+        : `invalid expire time in '${commandName}' command`,
+    ),
+
+  // Geo
+  invalidLongitudeLatitude: (lon: number, lat: number) =>
+    new RedisCommandError(
+      `invalid longitude,latitude pair ${formatCFixed6(lon)},${formatCFixed6(lat)}`,
+    ),
+  geoUnsupportedUnit: (profile: CompatibilityProfile) =>
+    new RedisCommandError(
+      profile.has('geo.unit-case-folding')
+        ? 'unsupported unit provided. please use M, KM, FT, MI'
+        : 'unsupported unit provided. please use m, km, ft, mi',
+    ),
+  // Valkey 9.0 names the member (valkey@9.0.0 geo.c:125-131
+  // longLatFromMemberOrReply, `%s`: cut at a NUL, CR / LF turned into spaces
+  // by addReplyErrorFormat); Redis and Valkey 8.x say `could not decode`.
+  geoMissingMember: (member: Buffer, profile: CompatibilityProfile) =>
+    profile.has('geo.missing-member-wording')
+      ? new RedisCommandError(
+          Buffer.concat([
+            Buffer.from('member '),
+            Buffer.from(cString(member, member.length)).map(byte =>
+              byte === 0x0d || byte === 0x0a ? 0x20 : byte,
+            ),
+            Buffer.from(' does not exist'),
+          ]),
+        )
+      : new RedisCommandError('could not decode requested zset member'),
+  geoCountNotPositive: () => new RedisCommandError('COUNT must be > 0'),
+  geoAnyRequiresCount: () =>
+    new RedisCommandError('the ANY argument requires COUNT argument'),
+  geoRadiusNotNumeric: () => new RedisCommandError('need numeric radius'),
+  geoRadiusNegative: () => new RedisCommandError('radius cannot be negative'),
+  geoWidthNotNumeric: () => new RedisCommandError('need numeric width'),
+  geoHeightNotNumeric: () => new RedisCommandError('need numeric height'),
+  geoBoxNegative: () =>
+    new RedisCommandError('height or width cannot be negative'),
+  geoRadiusStoreWithOptions: (profile: CompatibilityProfile) =>
+    new RedisCommandError(
+      profile.has('geo.store-with-options-wording')
+        ? 'STORE option in GEORADIUS is not compatible with WITHDIST, WITHHASH and WITHCOORD options'
+        : GEO_STORE_WITH_OPTIONS_6_2,
+    ),
+  // Redis 6.2 uses the GEORADIUS wording for GEOSEARCHSTORE too.
+  geoSearchStoreWithOptions: (profile: CompatibilityProfile) =>
+    new RedisCommandError(
+      profile.has('geo.store-with-options-wording')
+        ? 'GEOSEARCHSTORE is not compatible with WITHDIST, WITHHASH and WITHCOORD options'
+        : GEO_STORE_WITH_OPTIONS_6_2,
+    ),
+  // GEOSEARCH / GEOSEARCHSTORE without a FROM* or a BY* clause, naming the
+  // command as sent (`%s` of argv[0], redis@8.0.0 geo.c:678-690). Valkey 9.0
+  // adds BYPOLYGON to the BY wording, which comes with BYPOLYGON itself.
+  geoSearchNoFrom: (command: Buffer | string) =>
+    new RedisCommandError(
+      Buffer.concat([
+        Buffer.from(
+          'exactly one of FROMMEMBER or FROMLONLAT can be specified for ',
+        ),
+        Buffer.from(command),
+      ]),
+    ),
+  geoSearchNoBy: (command: Buffer | string) =>
+    new RedisCommandError(
+      Buffer.concat([
+        Buffer.from('exactly one of BYRADIUS and BYBOX can be specified for '),
+        Buffer.from(command),
+      ]),
+    ),
+
+  // Strings / bits
+  /**
+   * A command that grows a string value (APPEND/SETRANGE) would push it past
+   * `proto-max-bulk-len`. Redis refuses instead of allocating the value.
+   */
+  stringExceedsMaxSize: () =>
+    new RedisCommandError(
+      'string exceeds maximum allowed size (proto-max-bulk-len)',
+    ),
+  /** SETBIT/GETBIT/BITFIELD offset that is negative, non-integer, or >= 2^32. */
+  bitOffset: () =>
+    new RedisCommandError('bit offset is not an integer or out of range'),
+  /** SETBIT value that is not exactly 0 or 1. */
+  bitValue: () =>
+    new RedisCommandError('bit is not an integer or out of range'),
+  /** BITPOS bit argument that is not 0 or 1. */
+  bitPosBit: () => new RedisCommandError('The bit argument must be 1 or 0.'),
+  /** BITOP NOT invoked with more than one source key. */
+  bitOpNotSingleKey: () =>
+    new RedisCommandError('BITOP NOT must be called with a single source key.'),
+  /** BITFIELD type token that is malformed or u64 (only i64 is allowed at 64 bits). */
+  bitfieldType: () =>
+    new RedisCommandError(
+      'Invalid bitfield type. Use something like i16 u8. Note that u64 is not supported but i64 is.',
+    ),
+  /** BITFIELD OVERFLOW with a mode other than WRAP/SAT/FAIL. */
+  bitfieldOverflowType: () =>
+    new RedisCommandError('Invalid OVERFLOW type specified'),
+  /** A non-GET subcommand passed to BITFIELD_RO. */
+  bitfieldRoGetOnly: () =>
+    new RedisCommandError('BITFIELD_RO only supports the GET subcommand'),
+  /** A string-type key whose contents are not a valid HyperLogLog encoding. */
+  invalidHll: () =>
+    new RedisCommandError(
+      'Key is not a valid HyperLogLog string value.',
+      'WRONGTYPE',
+    ),
+
+  // Scripting
+  scriptFlushOption: () =>
+    new RedisCommandError('SCRIPT FLUSH only support SYNC|ASYNC option'),
+  functionFlushOption: () =>
+    new RedisCommandError('FUNCTION FLUSH only supports SYNC|ASYNC option'),
+  scriptDebugMode: () => new RedisCommandError('Use SCRIPT DEBUG YES/SYNC/NO'),
+  /**
+   * A script's `redis.call` named a command (or, from 7.0, a container
+   * subcommand) that command lookup cannot find. Valkey 8.0+ drops the product
+   * name; without a profile the Redis wording is used.
+   */
+  scriptUnknownCommand: (profile?: CompatibilityProfile) =>
+    new RedisCommandError(
+      profile?.has('script.unknown-command-valkey-wording')
+        ? 'Unknown command called from script'
+        : 'Unknown Redis command called from script',
+    ),
+  /**
+   * XREAD / XREADGROUP BLOCK from a script, up to Redis 7.2 / Valkey 7.2
+   * (`script.stream-block-allowed`, #563). It names the command as the
+   * script sent it, case and all.
+   */
+  scriptStreamBlock: (command: Buffer | string) =>
+    new RedisCommandError(
+      Buffer.concat([
+        Buffer.from(command),
+        Buffer.from(' command is not allowed with BLOCK option from scripts'),
+      ]),
+    ),
+  /** A `noscript` command from a script. Valkey 9.0+ names itself. */
+  scriptNotAllowedCommand: (profile?: CompatibilityProfile) =>
+    new RedisCommandError(
+      profile?.has('script.not-allowed-valkey-wording')
+        ? 'This Valkey command is not allowed from script'
+        : 'This Redis command is not allowed from script',
+    ),
+  /** `redis.call()` with no command. Valkey 8.0+ says `this call`. */
+  scriptCallNoCommand: (profile?: CompatibilityProfile) =>
+    new RedisCommandError(
+      profile?.has('script.unknown-command-valkey-wording')
+        ? 'Please specify at least one argument for this call'
+        : 'Please specify at least one argument for this redis lib call',
+    ),
+  /**
+   * A script's call that fails the command-table arity check (7.0+; 6.2 has
+   * its own wording, see `scriptRejection` in lua-runtime.ts). Valkey 8.0+
+   * drops the product name.
+   */
+  scriptWrongArity: (profile?: CompatibilityProfile) =>
+    new RedisCommandError(
+      profile?.has('script.unknown-command-valkey-wording')
+        ? 'Wrong number of args calling command from script'
+        : 'Wrong number of args calling Redis command from script',
+    ),
+  /** A redis.call argument that is not a string or number. Valkey 8.0+ wording. */
+  scriptArgumentType: (profile?: CompatibilityProfile) =>
+    new RedisCommandError(
+      profile?.has('script.unknown-command-valkey-wording')
+        ? 'Command arguments must be strings or integers'
+        : 'Lua redis lib command arguments must be strings or integers',
+    ),
+  /** EVALSHA of an uncached script. Valkey 8.0+ drops `Please use EVAL.` */
+  noScript: (profile?: CompatibilityProfile) =>
+    new RedisCommandError(
+      profile?.has('script.noscript-short-wording')
+        ? 'No matching script.'
+        : 'No matching script. Please use EVAL.',
+      'NOSCRIPT',
+    ),
+
+  // numkeys / multi-key
+  wrongNumberOfKeys: () =>
+    new RedisCommandError(
+      `Number of keys can't be greater than number of args`,
+    ),
+  /** EVAL / EVALSHA / FCALL family when numkeys < 0 (eval.c, functions.c). */
+  negativeNumberOfKeys: () =>
+    new RedisCommandError(`Number of keys can't be negative`),
+  /** FCALL / FCALL_RO when numkeys is not an int64 (functions.c). */
+  badNumberOfKeys: () => new RedisCommandError('Bad number of keys provided'),
+  numKeysGreaterThanZero: () =>
+    new RedisCommandError('numkeys should be greater than 0'),
+  /** ZUNION/ZINTER/ZDIFF family when numkeys <= 0. */
+  atLeastOneInputKey: (commandName: string, profile: CompatibilityProfile) =>
+    new RedisCommandError(
+      profile.has('zset.numkeys-quoted-wording')
+        ? `at least 1 input key is needed for '${commandName}' command`
+        : `at least 1 input key is needed for ${commandName}`,
+    ),
+  weightNotFloat: () => new RedisCommandError('weight value is not a float'),
+  countGreaterThanZero: () =>
+    new RedisCommandError('count should be greater than 0'),
+  limitCantBeNegative: () => new RedisCommandError(`LIMIT can't be negative`),
+
+  // COMMAND GETKEYS / GETKEYSANDFLAGS
+  invalidCommandSpecified: () =>
+    new RedisCommandError('Invalid command specified'),
+  commandHasNoKeyArguments: () =>
+    new RedisCommandError('The command has no key arguments'),
+
+  // SCAN family
+  invalidCursor: () => new RedisCommandError('invalid cursor'),
+
+  // Hash-field commands (HGETEX / HSETEX / HGETDEL / field expiry)
+  invalidNumberOfFields: () =>
+    new RedisCommandError('invalid number of fields'),
+  numFieldsNotPositive: () =>
+    new RedisCommandError('Number of fields must be a positive integer'),
+  numFieldsParamNotPositive: () =>
+    new RedisCommandError('Parameter `numFields` should be greater than 0'),
+  fieldsArgumentMissing: () =>
+    new RedisCommandError(
+      'Mandatory argument FIELDS is missing or not at the right position',
+    ),
+  numFieldsMismatch: () =>
+    new RedisCommandError(
+      'The `numfields` parameter must match the number of arguments',
+    ),
+  hashFieldExpireOptionConflict: () =>
+    new RedisCommandError(
+      'Only one of EX, PX, EXAT, PXAT or KEEPTTL arguments can be specified',
+    ),
+
+  // Sorted-set ranges
+  invalidLexRange: () =>
+    new RedisCommandError('min or max not valid string range item'),
+  zrangeLimitWithoutBy: () =>
+    new RedisCommandError(
+      'syntax error, LIMIT is only supported in combination with either BYSCORE or BYLEX',
+    ),
+  zrangeWithScoresByLex: () =>
+    new RedisCommandError(
+      'syntax error, WITHSCORES not supported in combination with BYLEX',
+    ),
+
+  // Transactions
+  execWithoutMulti: () => new RedisCommandError('EXEC without MULTI'),
+  discardWithoutMulti: () => new RedisCommandError('DISCARD without MULTI'),
+  watchInsideMulti: () =>
+    new RedisCommandError('WATCH inside MULTI is not allowed'),
+  /**
+   * A command flagged `no_multi` sent inside MULTI. Valkey 9.0 names it
+   * (`fullname` in lower case); see `error.no-multi-named-wording`.
+   */
+  commandNotAllowedInTransaction: (
+    name: string,
+    profile: CompatibilityProfile,
+  ) =>
+    new RedisCommandError(
+      profile.has('error.no-multi-named-wording')
+        ? `Command '${name}' not allowed inside a transaction`
+        : 'Command not allowed inside a transaction',
+    ),
+  transactionDiscarded: () =>
+    new RedisCommandError(
+      'Transaction discarded because of previous errors.',
+      'EXECABORT',
+    ),
+
+  // Cluster
+  /**
+   * CLUSTER (and READONLY / READWRITE where the version refuses them) on a
+   * standalone (`cluster-enabled no`) server.
+   */
+  clusterSupportDisabled: () =>
+    new RedisCommandError('This instance has cluster support disabled'),
+
+  // Keyspace / databases
+  /** `COPY src dst` (and `SELECT`) when source and destination resolve to the same object. */
+  sameObject: () =>
+    new RedisCommandError('source and destination objects are the same'),
+  /** A database index outside `0 .. databaseCount - 1` (e.g. `COPY ... DB 99`, `SELECT 99`). */
+  dbIndexOutOfRange: () => new RedisCommandError('DB index is out of range'),
+  /** `getIntFromObjectOrReply` on an int64 outside the C int range (SELECT, MOVE, COPY ... DB). */
+  int32OutOfRange: () =>
+    new RedisCommandError(
+      'value is out of range, value must between -2147483648 and 2147483647',
+    ),
+
+  // Streams
+  streamLimitRequiresApprox: () =>
+    new RedisCommandError(
+      'syntax error, LIMIT cannot be used without the special ~ option',
+    ),
+  streamLimitNegative: () =>
+    new RedisCommandError('The LIMIT argument must be >= 0.'),
+  invalidStreamId: () =>
+    new RedisCommandError(
+      'Invalid stream ID specified as stream command argument',
+    ),
+  streamIdEqualOrSmaller: () =>
+    new RedisCommandError(
+      'The ID specified in XADD is equal or smaller than the target stream top item',
+    ),
+  streamIdNotGreaterThanZero: () =>
+    new RedisCommandError('The ID specified in XADD must be greater than 0-0'),
+  xsetidSmallerThanTop: () =>
+    new RedisCommandError(
+      'The ID specified in XSETID is smaller than the target stream top item',
+    ),
+  xgroupCreateMissingKey: () =>
+    new RedisCommandError(
+      'The XGROUP subcommand requires the key to exist. Note that for CREATE you may want to use the MKSTREAM option to create an empty stream automatically.',
+    ),
+  busyKey: () =>
+    new RedisCommandError('Target key name already exists.', 'BUSYKEY'),
+  restoreInvalidTtl: () =>
+    new RedisCommandError('Invalid TTL value, must be >= 0'),
+  restoreInvalidIdleTime: () =>
+    new RedisCommandError('Invalid IDLETIME value, must be >= 0'),
+  restoreInvalidFreq: () =>
+    new RedisCommandError('Invalid FREQ value, must be >= 0 and <= 255'),
+  dumpPayloadInvalid: () =>
+    new RedisCommandError('DUMP payload version or checksum are wrong'),
+  badDataFormat: () => new RedisCommandError('Bad data format'),
+  migrateKeysNeedEmptyKey: () =>
+    new RedisCommandError(
+      'When using MIGRATE KEYS option, the key argument must be set to the empty string',
+    ),
+  busyStreamGroup: () =>
+    new RedisCommandError('Consumer Group name already exists', 'BUSYGROUP'),
+  noSuchStreamGroup: (key: Buffer, group: Buffer, commandName?: string) =>
+    new RedisCommandError(
+      `No such key '${key.toString()}' or consumer group '${group.toString()}'${
+        commandName === 'XREADGROUP' ? ' in XREADGROUP with GROUP option' : ''
+      }`,
+      'NOGROUP',
+    ),
+  // XGROUP's own wording (SETID / CREATECONSUMER / DELCONSUMER), raised once
+  // the key is known to exist.
+  xgroupNoSuchGroup: (key: Buffer, group: Buffer) =>
+    new RedisCommandError(
+      `No such consumer group '${group.toString()}' for key name '${key.toString()}'`,
+      'NOGROUP',
+    ),
+  streamIdExhausted: () =>
+    new RedisCommandError(
+      'The stream has exhausted the last possible ID, unable to add more items',
+    ),
+  /** LCS / STRALGO LCS KEYS naming a key of another type (not WRONGTYPE). */
+  lcsKeysNotStrings: () =>
+    new RedisCommandError('The specified keys must contain string values'),
+  lcsLenWithIdx: () =>
+    new RedisCommandError(
+      'If you want both the length and indexes, please just use IDX.',
+    ),
+  /** LCS (7.0+): the (len1+1)*(len2+1) uint32 table is over the limit. */
+  lcsExceedsProtoMaxBulkLen: () =>
+    new RedisCommandError(
+      'Insufficient memory, transient memory for LCS exceeds proto-max-bulk-len',
+    ),
+  lcsAllocationFailed: () =>
+    new RedisCommandError(
+      'Insufficient memory, failed allocating transient memory for LCS',
+    ),
+  /** STRALGO LCS (6.2) failing to allocate its table. */
+  lcsOutOfMemory: () => new RedisCommandError('Insufficient memory'),
+  stralgoStringsOrKeys: () =>
+    new RedisCommandError('Either use STRINGS or KEYS'),
+  stralgoNoStrings: () =>
+    new RedisCommandError(
+      'Please specify two strings: STRINGS or KEYS options are mandatory',
+    ),
+})
+
+/**
+ * C's `%f` for the GEO coordinate errors: six decimals, `inf` / `-inf` for
+ * an infinity, and plain digits (no exponent) however large the value.
+ */
+function formatCFixed6(value: number): string {
+  if (!Number.isFinite(value)) return value > 0 ? 'inf' : '-inf'
+  if (Math.abs(value) < 1e21) return value.toFixed(6)
+  return `${BigInt(value)}.000000`
+}

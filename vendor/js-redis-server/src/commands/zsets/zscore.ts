@@ -1,0 +1,36 @@
+import { defineCommand } from '../../core/command-definition'
+import { t } from '../../core/command-schema'
+import { RedisResult } from '../../core/redis-result'
+import { RedisValue } from '../../core/redis-value'
+import { array, bulk, scoreValue } from '../helpers'
+
+export const zscoreCommand = defineCommand({
+  name: 'zscore',
+  schema: t.object({ key: t.key(), member: t.bulk() }),
+  flags: ['readonly', 'fast'],
+  keys: args => [args.key],
+  execute: (args, ctx) => {
+    const zset = ctx.db.getSortedSet(args.key)
+    if (!zset) return bulk(null)
+    const entry = zset.members.get(args.member.toString('hex'))
+    if (!entry) return bulk(null)
+    return RedisResult.create(scoreValue(entry.score))
+  },
+})
+
+export const zmscoreCommand = defineCommand({
+  name: 'zmscore',
+  since: { redis: '6.2.0', valkey: '7.2.0' },
+  schema: t.object({ key: t.key(), members: t.variadic(t.bulk(), { min: 1 }) }),
+  flags: ['readonly', 'fast'],
+  keys: args => [args.key],
+  execute: (args, ctx) => {
+    const zset = ctx.db.getSortedSet(args.key)
+    const items: RedisValue[] = []
+    for (const member of args.members) {
+      const entry = zset?.members.get(member.toString('hex'))
+      items.push(entry ? scoreValue(entry.score) : RedisValue.bulkString(null))
+    }
+    return array(items)
+  },
+})

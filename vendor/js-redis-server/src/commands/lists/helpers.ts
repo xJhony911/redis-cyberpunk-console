@@ -1,0 +1,104 @@
+import { asciiUpperCase } from '../../core/ascii-case'
+import { errors } from '../../core/redis-error'
+import type { RedisExecutionContext } from '../../core/redis-context'
+import { RedisResult } from '../../core/redis-result'
+import { RedisValue } from '../../core/redis-value'
+import { array, bulk } from '../helpers'
+
+// Keyspace-event names for a list pop / push on `side`. Real Redis names the
+// events of blocking, multi-key and move-style list commands (BLPOP, LMPOP,
+// LMOVE, ...) after the underlying operation, not after the command (#446), so
+// those commands mutate through `db.withOrigin(listPopEvent(side))`.
+export function listPopEvent(side: 'left' | 'right'): 'lpop' | 'rpop' {
+  return side === 'left' ? 'lpop' : 'rpop'
+}
+
+export function listPushEvent(side: 'left' | 'right'): 'lpush' | 'rpush' {
+  return side === 'left' ? 'lpush' : 'rpush'
+}
+
+export function resolveIndex(index: number, len: number): number {
+  return index < 0 ? len + index : index
+}
+
+export function listRemove(
+  values: Buffer[],
+  count: number,
+  element: Buffer,
+): number {
+  const target = element.toString('binary')
+  let removed = 0
+
+  if (count === 0) {
+    for (let i = values.length - 1; i >= 0; i--) {
+      if (values[i].toString('binary') === target) {
+        values.splice(i, 1)
+        removed++
+      }
+    }
+  } else if (count > 0) {
+    for (let i = 0; i < values.length && removed < count; i++) {
+      if (values[i].toString('binary') === target) {
+        values.splice(i, 1)
+        removed++
+        i--
+      }
+    }
+  } else {
+    const absCount = Math.abs(count)
+    for (let i = values.length - 1; i >= 0 && removed < absCount; i--) {
+      if (values[i].toString('binary') === target) {
+        values.splice(i, 1)
+        removed++
+      }
+    }
+  }
+  return removed
+}
+
+export function popList(
+  args: { key: Buffer; count?: number },
+  ctx: RedisExecutionContext,
+  side: 'left' | 'right',
+): RedisResult {
+  const count = args.count
+  const list = ctx.db.getList(args.key)
+  if (!list || list.values.length === 0) {
+    return count === undefined
+      ? bulk(null)
+      : RedisResult.create(RedisValue.nullArray())
+  }
+
+  if (count === undefined) {
+    const result = ctx.db.updateList(args.key, list => {
+      const value = list.pop(side)
+      return { value, empty: list.length === 0 }
+    })
+    if (result.empty) ctx.db.delete(args.key)
+    return bulk(result.value)
+  }
+
+  if (count === 0) {
+    return array([])
+  }
+
+  const result = ctx.db.updateList(args.key, list => {
+    const values = list.popMany(side, count)
+    return { values, empty: list.length === 0 }
+  })
+  if (result.empty) ctx.db.delete(args.key)
+
+  return array(
+    result.values.map((value: Buffer) => RedisValue.bulkString(value)),
+  )
+}
+
+export function parseMoveDirection(
+  token: Buffer | undefined,
+): 'left' | 'right' {
+  if (!token) throw errors.syntax()
+  const direction = asciiUpperCase(token.toString())
+  if (direction === 'LEFT') return 'left'
+  if (direction === 'RIGHT') return 'right'
+  throw errors.syntax()
+}

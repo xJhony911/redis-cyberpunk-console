@@ -1,0 +1,294 @@
+import { asciiUpperCase } from '../../core/ascii-case'
+import { defineCommand } from '../../core/command-definition'
+import { t } from '../../core/command-schema'
+import type { RedisExecutionContext } from '../../core/redis-context'
+import { WrongNumberOfArgumentsError, errors } from '../../core/redis-error'
+import { RedisValue } from '../../core/redis-value'
+import type { RedisSortedSetMember } from '../../state/data-types'
+import { RedisResult } from '../../core/redis-result'
+import { array, integer, scorePairs } from '../helpers'
+import {
+  applyLexLimit,
+  getLexSortedMembers,
+  lexMemberWithinBounds,
+  type LexLimit,
+  parseLexBoundArg,
+  parseLexLimitInt,
+  parseRangeLimitInt,
+} from './lex'
+import { storedZsetByInsertion } from '../../state/zset-encoding'
+import { getSortedMembers, zsetEncodingRules } from './helpers'
+import { parseScoreBoundArg, scoreWithinBounds } from './score'
+
+// Modern ZRANGE (Redis 6.2+):
+//   ZRANGE key min max [BYSCORE | BYLEX] [REV] [LIMIT offset count] [WITHSCORES]
+// The legacy index-based form is the default (no BYSCORE/BYLEX). BYSCORE/BYLEX
+// share the score-range and lex-range parsing/filtering helpers used by
+// ZRANGEBYSCORE/ZRANGEBYLEX. With REV, the min/max arguments are given in
+// reverse order (max then min), matching ZREVRANGEBYSCORE/ZREVRANGEBYLEX.
+type ZrangeBy = 'index' | 'score' | 'lex'
+
+type ZrangeSelectionArgs = {
+  key: Buffer
+  min: Buffer
+  max: Buffer
+  by: ZrangeBy
+  rev: boolean
+  limit?: LexLimit
+}
+
+type ZrangeArgs = ZrangeSelectionArgs & {
+  withScores: boolean
+}
+
+type ZrangestoreArgs = ZrangeSelectionArgs & {
+  destination: Buffer
+}
+
+type ParsedZrangeOptions = {
+  by: ZrangeBy
+  rev: boolean
+  limit?: LexLimit
+  withScores: boolean
+}
+
+function parseZrangeOptions(
+  input: readonly Buffer[],
+  cursor: number,
+  options: { allowWithScores: boolean },
+): ParsedZrangeOptions {
+  let by: ZrangeBy = 'index'
+  let rev = false
+  let withScores = false
+  let limit: LexLimit | undefined
+
+  while (cursor < input.length) {
+    const option = asciiUpperCase(input[cursor]!.toString())
+
+    if (option === 'BYSCORE') {
+      if (by === 'lex') throw errors.syntax()
+      by = 'score'
+      cursor++
+      continue
+    }
+
+    if (option === 'BYLEX') {
+      if (by === 'score') throw errors.syntax()
+      by = 'lex'
+      cursor++
+      continue
+    }
+
+    if (option === 'REV') {
+      rev = true
+      cursor++
+      continue
+    }
+
+    if (option === 'WITHSCORES') {
+      if (!options.allowWithScores) throw errors.syntax()
+      withScores = true
+      cursor++
+      continue
+    }
+
+    if (option === 'LIMIT') {
+      const offsetTok = input[cursor + 1]
+      const countTok = input[cursor + 2]
+      if (!offsetTok || !countTok) throw errors.syntax()
+      limit = {
+        offset: parseRangeLimitInt(offsetTok),
+        count: parseRangeLimitInt(countTok),
+      }
+      cursor += 3
+      continue
+    }
+
+    throw errors.syntax()
+  }
+
+  if (limit && by === 'index') throw errors.zrangeLimitWithoutBy()
+  if (withScores && by === 'lex') throw errors.zrangeWithScoresByLex()
+
+  return { by, rev, limit, withScores }
+}
+
+function createZrangeSchema() {
+  return t.custom<ZrangeArgs>({ min: 3, keys: [0] }, (input, index, ctx) => {
+    const key = input[index]
+    const min = input[index + 1]
+    const max = input[index + 2]
+    if (!key || !min || !max) {
+      throw new WrongNumberOfArgumentsError(ctx.commandName)
+    }
+
+    return {
+      value: {
+        key,
+        min,
+        max,
+        ...parseZrangeOptions(input, index + 3, { allowWithScores: true }),
+      },
+      nextIndex: input.length,
+    }
+  })
+}
+
+function createZrangestoreSchema() {
+  const layout = { min: 4, keys: [0, 1] }
+  return t.custom<ZrangestoreArgs>(layout, (input, index, ctx) => {
+    const destination = input[index]
+    const key = input[index + 1]
+    const min = input[index + 2]
+    const max = input[index + 3]
+    if (!destination || !key || !min || !max) {
+      throw new WrongNumberOfArgumentsError(ctx.commandName)
+    }
+
+    const { by, rev, limit } = parseZrangeOptions(input, index + 4, {
+      allowWithScores: false,
+    })
+
+    return {
+      value: { destination, key, min, max, by, rev, limit },
+      nextIndex: input.length,
+    }
+  })
+}
+
+function selectZrangeMembers(
+  args: ZrangeSelectionArgs,
+  ctx: RedisExecutionContext,
+): RedisSortedSetMember[] {
+  // With REV the bounds are supplied as `max min`, so swap before parsing.
+  const minTok = args.rev ? args.max : args.min
+  const maxTok = args.rev ? args.min : args.max
+
+  if (args.by === 'index') {
+    // parse index bounds up front so a bad index errors even on a missing key
+    const startIdx = parseLexLimitInt(args.min)
+    const stopIdx = parseLexLimitInt(args.max)
+    const zset = ctx.db.getSortedSet(args.key)
+    if (!zset) return []
+    return sliceByIndex(getSortedMembers(zset), startIdx, stopIdx, args.rev)
+  }
+
+  if (args.by === 'score') {
+    const min = parseScoreBoundArg(minTok, ctx.server.profile)
+    const max = parseScoreBoundArg(maxTok, ctx.server.profile)
+    const zset = ctx.db.getSortedSet(args.key)
+    if (!zset) return []
+    let matched = getSortedMembers(zset).filter(m =>
+      scoreWithinBounds(m.score, min, max),
+    )
+    if (args.rev) matched = matched.reverse()
+    return applyLexLimit(matched, args.limit)
+  }
+
+  // BYLEX
+  const min = parseLexBoundArg(minTok)
+  const max = parseLexBoundArg(maxTok)
+  const zset = ctx.db.getSortedSet(args.key)
+  if (!zset) return []
+  let matched = getLexSortedMembers(zset).filter(m =>
+    lexMemberWithinBounds(m.member, min, max),
+  )
+  if (args.rev) matched = matched.reverse()
+  return applyLexLimit(matched, args.limit)
+}
+
+function buildStoredMembers(
+  members: RedisSortedSetMember[],
+): Map<string, RedisSortedSetMember> {
+  return new Map(
+    members.map(entry => [
+      entry.member.toString('hex'),
+      { member: Buffer.from(entry.member), score: entry.score },
+    ]),
+  )
+}
+
+function buildRangeResult(
+  members: RedisSortedSetMember[],
+  withScores: boolean,
+): RedisResult {
+  if (withScores) {
+    return RedisResult.create(scorePairs(members))
+  }
+  return array(members.map(entry => RedisValue.bulkString(entry.member)))
+}
+
+function sliceByIndex(
+  sorted: RedisSortedSetMember[],
+  startIdx: number,
+  stopIdx: number,
+  rev: boolean,
+): RedisSortedSetMember[] {
+  const ordered = rev ? sorted.slice().reverse() : sorted
+  const len = ordered.length
+  const start = startIdx < 0 ? Math.max(0, len + startIdx) : startIdx
+  const stop = stopIdx < 0 ? len + stopIdx : Math.min(stopIdx, len - 1)
+  if (start > stop) return []
+  return ordered.slice(start, stop + 1)
+}
+
+export const zrangeCommand = defineCommand({
+  name: 'zrange',
+  schema: createZrangeSchema(),
+  flags: ['readonly'],
+  keys: args => [args.key],
+  execute: (args, ctx) => {
+    return buildRangeResult(selectZrangeMembers(args, ctx), args.withScores)
+  },
+})
+
+export const zrangestoreCommand = defineCommand({
+  name: 'zrangestore',
+  schema: createZrangestoreSchema(),
+  flags: ['write'],
+  keys: args => [args.destination, args.key],
+  execute: (args, ctx) => {
+    const entries = selectZrangeMembers(args, ctx)
+    if (entries.length === 0) {
+      ctx.db.delete(args.destination)
+      return integer(0)
+    }
+
+    // One write replacing whatever the destination held, like real Redis:
+    // a single `zrangestore`, not `del` followed by it. The members go in
+    // one by one, as zsetAdd() would (#512). Only the rank form tells
+    // zsetTypeCreate() its length.
+    const zset = storedZsetByInsertion(
+      Array.from(buildStoredMembers(entries).values()),
+      zsetEncodingRules(ctx.server),
+      args.by === 'index' ? entries.length : null,
+    )
+    ctx.db.set(args.destination, zset)
+    return integer(zset.members.size)
+  },
+})
+
+export const zrevrangeCommand = defineCommand({
+  name: 'zrevrange',
+  schema: t.object({
+    key: t.key(),
+    start: t.integer(),
+    stop: t.integer(),
+    withScores: t.optional(t.keyword('WITHSCORES')),
+  }),
+  flags: ['readonly'],
+  keys: args => [args.key],
+  execute: (args, ctx) => {
+    const zset = ctx.db.getSortedSet(args.key)
+    if (!zset) return array([])
+    const sorted = getSortedMembers(zset).slice().reverse()
+    const len = sorted.length
+    const start = args.start < 0 ? Math.max(0, len + args.start) : args.start
+    const stop = args.stop < 0 ? len + args.stop : Math.min(args.stop, len - 1)
+    if (start > stop) return array([])
+    return buildRangeResult(
+      sorted.slice(start, stop + 1),
+      args.withScores !== undefined,
+    )
+  },
+})

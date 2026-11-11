@@ -1,0 +1,376 @@
+APPEND|Añade bytes al final de un String; crea la clave cuando todavía no existe.
+DECR|Resta uno a un contador entero; parte de cero si la clave no existe.
+DECRBY|Resta una cantidad a un contador entero de 64 bits.
+GET|Lee un String; devuelve nulo cuando la clave no existe.
+GETDEL|Lee un String y elimina su clave en una única operación.
+GETEX|Lee un String y, opcionalmente, modifica o elimina su caducidad.
+GETRANGE|Extrae un intervalo inclusivo de bytes de un String.
+GETSET|Sustituye un String y devuelve el valor anterior; prefiere SET con GET.
+INCR|Suma uno a un contador entero; útil para visitas y secuencias.
+INCRBY|Suma una cantidad a un contador entero de 64 bits.
+INCRBYFLOAT|Suma una cantidad decimal y devuelve el nuevo valor como texto.
+LCS|Calcula la subsecuencia común más larga de dos Strings; no exige caracteres contiguos.
+MGET|Lee varios Strings en una sola operación y conserva el orden de las claves.
+MSET|Establece varios pares clave-valor atómicamente, sobrescribiendo valores existentes.
+MSETNX|Crea varios Strings únicamente cuando ninguna de sus claves existe.
+PSETEX|Establece un String con caducidad en milisegundos; prefiere SET PX.
+SET|Guarda un String con condiciones de existencia, recuperación del valor anterior y caducidad opcional.
+SETEX|Establece un String con caducidad en segundos; prefiere SET EX.
+SETNX|Crea un String solo si su clave no existe; prefiere SET NX.
+SETRANGE|Sobrescribe bytes a partir de un desplazamiento, rellenando con bytes cero si hace falta.
+STRLEN|Devuelve la longitud en bytes de un String, no su cantidad de caracteres Unicode.
+SUBSTR|Alias antiguo de GETRANGE para extraer un intervalo de bytes.
+HSET|Establece campos de un Hash; devuelve cuántos campos nuevos se añadieron.
+HSETNX|Establece un campo de Hash solamente cuando ese campo todavía no existe.
+HGET|Lee un campo de un Hash o devuelve nulo si no existe.
+HGETALL|Lee todos los campos y valores de un Hash.
+HMGET|Lee varios campos de un Hash en el orden solicitado.
+HMSET|Establece varios campos de Hash; prefiere HSET con múltiples pares.
+HDEL|Elimina campos de un Hash y elimina la clave cuando queda vacío.
+HEXISTS|Comprueba si un Hash contiene un campo.
+HLEN|Cuenta los campos de un Hash.
+HKEYS|Devuelve todos los nombres de campos de un Hash.
+HVALS|Devuelve todos los valores de un Hash.
+HSTRLEN|Mide en bytes el valor de un campo de Hash.
+HINCRBY|Incrementa un campo de Hash como entero de 64 bits.
+HINCRBYFLOAT|Incrementa un campo de Hash como número decimal.
+HRANDFIELD|Obtiene uno o varios campos aleatorios, opcionalmente con sus valores.
+HSCAN|Recorre campos de un Hash por cursor sin solicitar todo el contenido de una vez.
+LPUSH|Inserta uno o varios elementos por la izquierda de una lista.
+RPUSH|Inserta uno o varios elementos por la derecha de una lista.
+LPUSHX|Inserta por la izquierda únicamente cuando la lista existe.
+RPUSHX|Inserta por la derecha únicamente cuando la lista existe.
+LPOP|Extrae elementos del extremo izquierdo de una lista.
+RPOP|Extrae elementos del extremo derecho de una lista.
+LLEN|Cuenta los elementos de una lista.
+LINDEX|Lee el elemento ubicado en un índice; admite índices negativos.
+LRANGE|Lee un intervalo inclusivo de elementos de una lista.
+LSET|Sustituye el elemento de una lista en un índice existente.
+LINSERT|Inserta un elemento antes o después de la primera aparición de un pivote.
+LREM|Elimina apariciones de un valor desde el extremo indicado por el signo del contador.
+LTRIM|Conserva un intervalo de una lista y descarta el resto.
+LPOS|Busca la posición de un valor, con opciones para repeticiones y límite de búsqueda.
+LMOVE|Mueve atómicamente un elemento entre extremos de dos listas.
+LMPOP|Extrae elementos de la primera lista no vacía entre las indicadas.
+RPOPLPUSH|Mueve de la derecha de una lista a la izquierda de otra; prefiere LMOVE.
+BLMOVE|Espera y mueve un elemento entre listas cuando aparece un elemento disponible.
+BLMPOP|Espera y extrae elementos de la primera lista disponible.
+BLPOP|Espera y extrae un elemento por la izquierda de la primera lista disponible.
+BRPOP|Espera y extrae un elemento por la derecha de la primera lista disponible.
+BRPOPLPUSH|Variante bloqueante de RPOPLPUSH; prefiere BLMOVE.
+SADD|Añade miembros únicos a un Set y devuelve cuántos eran nuevos.
+SREM|Elimina miembros de un Set.
+SCARD|Cuenta los miembros únicos de un Set.
+SMEMBERS|Devuelve todos los miembros de un Set, sin orden garantizado.
+SISMEMBER|Comprueba si un miembro pertenece a un Set.
+SMISMEMBER|Comprueba la pertenencia de varios miembros de un Set.
+SINTER|Obtiene los miembros presentes en todos los Sets indicados.
+SINTERCARD|Cuenta los miembros de una intersección, con límite opcional.
+SINTERSTORE|Guarda la intersección de varios Sets en una clave de destino.
+SUNION|Obtiene la unión de miembros de varios Sets.
+SUNIONSTORE|Guarda la unión de varios Sets en una clave de destino.
+SDIFF|Obtiene los miembros del primer Set que no aparecen en los siguientes.
+SDIFFSTORE|Guarda la diferencia de varios Sets en una clave de destino.
+SMOVE|Mueve atómicamente un miembro entre dos Sets.
+SPOP|Extrae uno o varios miembros aleatorios de un Set.
+SRANDMEMBER|Lee miembros aleatorios sin eliminarlos; un contador negativo permite repeticiones.
+SSCAN|Recorre un Set mediante cursor, con patrón y cantidad orientativa.
+ZADD|Añade o actualiza miembros con puntuaciones en un Sorted Set.
+ZCARD|Cuenta los miembros de un Sorted Set.
+ZCOUNT|Cuenta miembros dentro de un intervalo de puntuaciones.
+ZSCORE|Obtiene la puntuación de un miembro o nulo si no existe.
+ZMSCORE|Obtiene puntuaciones de varios miembros conservando su orden.
+ZINCRBY|Incrementa la puntuación de un miembro y devuelve su nuevo valor.
+ZRANGE|Consulta miembros por posición, puntuación o rango lexicográfico.
+ZRANGESTORE|Guarda en otro Sorted Set el resultado de un rango.
+ZRANGEBYSCORE|Consulta por puntuación; prefiere ZRANGE BYSCORE.
+ZRANGEBYLEX|Consulta un rango lexicográfico; prefiere ZRANGE BYLEX.
+ZREVRANGE|Consulta posiciones en orden inverso; prefiere ZRANGE REV.
+ZREVRANGEBYSCORE|Consulta puntuaciones descendentes; prefiere ZRANGE REV BYSCORE.
+ZREVRANGEBYLEX|Consulta un rango lexicográfico inverso; prefiere ZRANGE REV BYLEX.
+ZRANK|Devuelve la posición ascendente de un miembro, empezando por cero.
+ZREVRANK|Devuelve la posición descendente de un miembro, empezando por cero.
+ZREM|Elimina miembros de un Sorted Set.
+ZREMRANGEBYRANK|Elimina miembros por un intervalo de posiciones.
+ZREMRANGEBYSCORE|Elimina miembros por un intervalo de puntuaciones.
+ZREMRANGEBYLEX|Elimina miembros por intervalo lexicográfico.
+ZLEXCOUNT|Cuenta miembros de un intervalo lexicográfico con puntuación igual.
+ZRANDMEMBER|Obtiene miembros aleatorios, opcionalmente con sus puntuaciones.
+ZPOPMIN|Extrae los miembros con menor puntuación.
+ZPOPMAX|Extrae los miembros con mayor puntuación.
+BZPOPMIN|Espera y extrae un miembro con puntuación mínima.
+BZPOPMAX|Espera y extrae un miembro con puntuación máxima.
+ZMPOP|Extrae miembros del primer Sorted Set no vacío indicado.
+BZMPOP|Espera y extrae miembros del primer Sorted Set disponible.
+ZUNION|Calcula una unión ponderada de Sorted Sets.
+ZUNIONSTORE|Guarda la unión ponderada de Sorted Sets en una clave.
+ZINTER|Calcula una intersección ponderada de Sorted Sets.
+ZINTERCARD|Cuenta miembros en la intersección de Sorted Sets.
+ZINTERSTORE|Guarda la intersección ponderada de Sorted Sets.
+ZDIFF|Obtiene miembros del primer Sorted Set ausentes en los siguientes.
+ZDIFFSTORE|Guarda la diferencia de Sorted Sets.
+ZSCAN|Recorre miembros y puntuaciones de un Sorted Set mediante cursor.
+BITCOUNT|Cuenta bits establecidos a uno en un String o intervalo de bytes o bits.
+BITFIELD|Lee y modifica enteros empaquetados de ancho arbitrario dentro de un String.
+BITFIELD_RO|Lee campos de bits sin permitir escrituras.
+BITOP|Combina Strings mediante operaciones AND, OR, XOR o NOT y guarda el resultado.
+BITPOS|Encuentra la posición del primer bit con un valor determinado.
+GETBIT|Lee un bit por su desplazamiento dentro de un String.
+SETBIT|Establece un bit y devuelve el valor anterior de ese bit.
+PFADD|Añade observaciones a una estructura HyperLogLog para estimar cardinalidad.
+PFCOUNT|Estima la cantidad de elementos únicos de uno o varios HyperLogLogs.
+PFMERGE|Combina HyperLogLogs en una estructura de destino.
+PFDEBUG|Inspecciona detalles internos de HyperLogLog; reservado para depuración.
+PFSELFTEST|Ejecuta una prueba interna de HyperLogLog; reservado para diagnóstico.
+GEOADD|Guarda coordenadas de miembros geográficos, con longitud antes que latitud.
+GEODIST|Calcula la distancia aproximada entre dos miembros geográficos.
+GEOHASH|Devuelve representaciones geohash de miembros geográficos.
+GEOPOS|Obtiene longitud y latitud de miembros almacenados.
+GEOSEARCH|Busca miembros por círculo o rectángulo alrededor de coordenadas o de un miembro.
+GEOSEARCHSTORE|Guarda los resultados de una búsqueda geográfica en otro Sorted Set.
+GEORADIUS|Busca en un radio alrededor de coordenadas; prefiere GEOSEARCH.
+GEORADIUS_RO|Variante de lectura de GEORADIUS; prefiere GEOSEARCH.
+GEORADIUSBYMEMBER|Busca por radio alrededor de un miembro; prefiere GEOSEARCH.
+GEORADIUSBYMEMBER_RO|Variante de lectura de GEORADIUSBYMEMBER; prefiere GEOSEARCH.
+XADD|Añade un evento con campos a un Stream, con ID automático o explícito.
+XLEN|Cuenta los eventos existentes de un Stream.
+XRANGE|Lee eventos entre dos IDs en orden ascendente.
+XREVRANGE|Lee eventos entre dos IDs en orden descendente.
+XREAD|Lee eventos posteriores a los IDs indicados, con espera opcional.
+XREADGROUP|Entrega eventos a un consumidor de un grupo y registra pendientes de confirmación.
+XACK|Confirma eventos pendientes de un grupo de consumidores.
+XDEL|Elimina eventos por ID sin renumerar el Stream.
+XTRIM|Recorta eventos por longitud o ID mínimo, de forma exacta o aproximada.
+XPENDING|Inspecciona los eventos pendientes de confirmación de un grupo.
+XCLAIM|Transfiere eventos pendientes a otro consumidor tras un tiempo de inactividad.
+XAUTOCLAIM|Recorre y reclama automáticamente eventos pendientes inactivos.
+XSETID|Modifica el último ID del Stream; operación administrativa avanzada.
+XGROUP|Agrupa operaciones sobre grupos de consumidores de Streams.
+XGROUP CREATE|Crea un grupo de consumidores a partir de un ID; MKSTREAM permite crear el Stream.
+XGROUP CREATECONSUMER|Crea explícitamente un consumidor dentro de un grupo.
+XGROUP DELCONSUMER|Elimina un consumidor; revisa sus pendientes antes de hacerlo.
+XGROUP DESTROY|Elimina un grupo y su seguimiento de entregas pendientes.
+XGROUP SETID|Cambia el último ID entregado de un grupo.
+XINFO|Agrupa inspecciones de Streams, grupos y consumidores.
+XINFO STREAM|Muestra longitud, IDs y otros detalles de un Stream.
+XINFO GROUPS|Muestra los grupos de consumidores y sus pendientes.
+XINFO CONSUMERS|Muestra los consumidores de un grupo y su inactividad.
+PUBLISH|Publica un mensaje efímero en un canal y devuelve el número de receptores.
+SUBSCRIBE|Suscribe la conexión a canales y recibe mensajes futuros.
+UNSUBSCRIBE|Cancela suscripciones a canales.
+PSUBSCRIBE|Suscribe la conexión a canales que coinciden con patrones.
+PUNSUBSCRIBE|Cancela suscripciones por patrón.
+SPUBLISH|Publica un mensaje en un canal particionado de Redis Cluster.
+SSUBSCRIBE|Suscribe la conexión a canales particionados.
+SUNSUBSCRIBE|Cancela suscripciones a canales particionados.
+PUBSUB|Agrupa consultas sobre canales y suscripciones activas.
+PUBSUB CHANNELS|Lista canales activos que tienen suscriptores directos.
+PUBSUB NUMPAT|Cuenta patrones de suscripción distintos.
+PUBSUB NUMSUB|Cuenta suscriptores directos de los canales indicados.
+PUBSUB SHARDCHANNELS|Lista canales particionados activos.
+PUBSUB SHARDNUMSUB|Cuenta suscriptores de canales particionados.
+MULTI|Inicia una cola de comandos que se ejecutará de forma aislada al llamar a EXEC.
+EXEC|Ejecuta los comandos encolados, o cancela si cambió una clave vigilada.
+DISCARD|Descarta una transacción y cancela las claves vigiladas.
+WATCH|Vigila claves para detectar cambios antes de ejecutar una transacción optimista.
+UNWATCH|Deja de vigilar todas las claves de la conexión.
+EXISTS|Cuenta cuántas de las claves indicadas existen, contando argumentos repetidos.
+DEL|Elimina claves sin importar su tipo.
+UNLINK|Desvincula claves y libera sus valores de forma asíncrona en Redis real.
+TYPE|Indica el tipo de una clave o none si no existe.
+KEYS|Lista todas las claves que coinciden con un patrón; evita su uso sobre grandes bases.
+SCAN|Recorre claves mediante cursor; COUNT es una sugerencia, no un tamaño garantizado.
+RANDOMKEY|Devuelve una clave aleatoria o nulo cuando la base está vacía.
+RENAME|Renombra una clave, reemplazando el destino si existe.
+RENAMENX|Renombra una clave solamente cuando el destino no existe.
+COPY|Copia el valor de una clave, opcionalmente a otra base o reemplazando el destino.
+MOVE|Mueve una clave a otra base lógica si el destino no existe.
+EXPIRE|Fija una caducidad relativa en segundos, con condiciones opcionales.
+PEXPIRE|Fija una caducidad relativa en milisegundos, con condiciones opcionales.
+EXPIREAT|Fija la caducidad con un instante Unix expresado en segundos.
+PEXPIREAT|Fija la caducidad con un instante Unix expresado en milisegundos.
+TTL|Devuelve segundos restantes, -1 sin caducidad o -2 si la clave no existe.
+PTTL|Devuelve milisegundos restantes, -1 sin caducidad o -2 si la clave no existe.
+EXPIRETIME|Devuelve el instante Unix de caducidad en segundos.
+PEXPIRETIME|Devuelve el instante Unix de caducidad en milisegundos.
+PERSIST|Elimina la caducidad de una clave existente.
+TOUCH|Actualiza el acceso a claves sin leer sus valores.
+DUMP|Serializa el valor de una clave en un formato interno binario.
+RESTORE|Reconstruye una clave desde la serialización producida por DUMP.
+RESTORE-ASKING|Variante interna de RESTORE utilizada durante migración de slots.
+MIGRATE|Transfiere claves a otro servidor Redis; requiere conexión de red y permisos.
+SORT|Ordena elementos de una colección con proyecciones y almacenamiento opcionales.
+SORT_RO|Ordena elementos sin permitir la opción STORE.
+OBJECT|Agrupa inspecciones de representación interna y uso de objetos.
+OBJECT ENCODING|Informa de la codificación interna de una clave.
+OBJECT FREQ|Consulta el contador de frecuencia para políticas LFU.
+OBJECT IDLETIME|Consulta segundos desde el último acceso cuando está disponible.
+OBJECT REFCOUNT|Consulta referencias internas al objeto de una clave.
+WAIT|Espera confirmaciones de replicación de escrituras previas de esta conexión.
+WAITAOF|Espera confirmación de persistencia AOF local y de réplicas.
+EVAL|Ejecuta un script Lua atómico con claves y argumentos explícitos.
+EVAL_RO|Ejecuta un script Lua que solo puede realizar lecturas.
+EVALSHA|Ejecuta un script previamente cargado mediante su digest SHA1.
+EVALSHA_RO|Ejecuta por SHA1 un script que solo puede realizar lecturas.
+FCALL|Invoca una función previamente registrada en Redis.
+FCALL_RO|Invoca una función registrada que solo puede realizar lecturas.
+SCRIPT|Agrupa operaciones de carga, inspección y administración de scripts Lua.
+SCRIPT DEBUG|Activa la depuración de scripts Lua para la conexión.
+SCRIPT EXISTS|Comprueba si los digests de scripts están en la caché del servidor.
+SCRIPT FLUSH|Vacía la caché de scripts del servidor.
+SCRIPT KILL|Interrumpe un script en ejecución cuando todavía no ha realizado escrituras.
+SCRIPT LOAD|Carga un script en la caché y devuelve su digest SHA1.
+FUNCTION|Agrupa operaciones sobre bibliotecas de funciones de Redis 7.
+FUNCTION DELETE|Elimina una biblioteca de funciones.
+FUNCTION DUMP|Exporta bibliotecas de funciones en un formato serializado.
+FUNCTION FLUSH|Elimina todas las bibliotecas de funciones.
+FUNCTION KILL|Intenta detener una función en ejecución que aún no ha escrito datos.
+FUNCTION LIST|Lista bibliotecas y funciones, opcionalmente con su código.
+FUNCTION LOAD|Carga una biblioteca con funciones Lua registradas.
+FUNCTION RESTORE|Importa bibliotecas desde un volcado serializado.
+FUNCTION STATS|Muestra estadísticas y la función actualmente en ejecución.
+PING|Comprueba que el servidor responde; con un argumento devuelve ese mensaje.
+ECHO|Devuelve exactamente el mensaje recibido.
+TIME|Devuelve la hora del servidor como segundos Unix y microsegundos.
+AUTH|Autentica la conexión con contraseña y, opcionalmente, usuario ACL.
+HELLO|Negocia RESP y puede autenticar y asignar nombre a la conexión.
+SELECT|Selecciona una base lógica para la conexión; Redis Cluster solo admite la base cero.
+RESET|Restablece el estado de una conexión a su estado inicial.
+QUIT|Solicita cerrar la conexión; desde Redis 7.2 se recomienda cerrar el transporte.
+CLIENT|Agrupa operaciones sobre conexiones y caché del lado cliente.
+CLIENT CACHING|Controla la participación del siguiente comando en el seguimiento de caché.
+CLIENT GETNAME|Devuelve el nombre de la conexión actual.
+CLIENT GETREDIR|Devuelve el ID al que se redirigen las invalidaciones de caché.
+CLIENT ID|Devuelve el identificador único de la conexión.
+CLIENT INFO|Describe la conexión actual.
+CLIENT KILL|Cierra conexiones que coinciden con los filtros indicados.
+CLIENT LIST|Lista conexiones y sus métricas.
+CLIENT NO-EVICT|Controla si la conexión puede ser expulsada por límites de memoria de clientes.
+CLIENT NO-TOUCH|Evita actualizar las estadísticas de acceso de claves desde esta conexión.
+CLIENT PAUSE|Suspende temporalmente comandos de clientes en el servidor.
+CLIENT REPLY|Controla si el servidor devuelve respuestas a la conexión.
+CLIENT SETINFO|Anota el nombre y versión de la biblioteca cliente.
+CLIENT SETNAME|Asigna un nombre a la conexión para identificarla en diagnósticos.
+CLIENT TRACKING|Activa o configura invalidaciones para caché del lado cliente.
+CLIENT TRACKINGINFO|Muestra la configuración de seguimiento de caché.
+CLIENT UNBLOCK|Desbloquea otra conexión que espera un comando bloqueante.
+CLIENT UNPAUSE|Reanuda las conexiones detenidas por CLIENT PAUSE.
+DBSIZE|Cuenta las claves de la base lógica seleccionada.
+FLUSHDB|Elimina todas las claves de la base lógica seleccionada.
+FLUSHALL|Elimina todas las claves de todas las bases del servidor.
+SWAPDB|Intercambia dos bases lógicas de forma atómica.
+INFO|Devuelve métricas y configuración operativa agrupadas por secciones.
+ROLE|Describe si el proceso actúa como primario, réplica o Sentinel.
+REPLICAOF|Configura la replicación desde otro servidor o promueve una réplica.
+SLAVEOF|Nombre antiguo de REPLICAOF; prefiere la denominación actual.
+REPLCONF|Intercambia parámetros internos del protocolo de replicación.
+PSYNC|Inicia sincronización parcial o completa de una réplica.
+SYNC|Inicia sincronización completa mediante el protocolo antiguo de replicación.
+FAILOVER|Coordina el traspaso de primario a réplica.
+SAVE|Escribe una instantánea RDB de forma síncrona, bloqueando el servidor.
+BGSAVE|Solicita una instantánea RDB en un proceso secundario.
+BGREWRITEAOF|Reescribe el registro AOF en segundo plano para compactarlo.
+LASTSAVE|Devuelve la hora Unix de la última instantánea RDB exitosa.
+SHUTDOWN|Detiene el servidor con opciones de guardado y espera.
+DEBUG|Agrupa herramientas internas de depuración; no se usa en aplicaciones normales.
+MONITOR|Emite en tiempo real los comandos procesados; requiere conexión dedicada.
+LOLWUT|Muestra arte y datos de versión; no modifica datos de negocio.
+COMMAND|Devuelve metadatos de los comandos disponibles en el servidor.
+COMMAND COUNT|Cuenta los comandos disponibles.
+COMMAND DOCS|Devuelve documentación estructurada de comandos.
+COMMAND GETKEYS|Extrae las claves utilizadas por una invocación de comando.
+COMMAND GETKEYSANDFLAGS|Extrae claves y banderas de acceso de una invocación.
+COMMAND INFO|Devuelve metadatos de los comandos indicados.
+COMMAND LIST|Lista comandos y admite filtros por patrón, categoría ACL o módulo.
+CONFIG|Agrupa consultas y modificaciones de configuración del servidor.
+CONFIG GET|Lee parámetros de configuración que coinciden con patrones.
+CONFIG SET|Modifica parámetros de configuración en tiempo de ejecución.
+CONFIG RESETSTAT|Reinicia contadores estadísticos del servidor.
+CONFIG REWRITE|Persiste la configuración actual en el archivo de configuración.
+ACL|Agrupa la administración de usuarios, permisos y auditoría de acceso.
+ACL CAT|Lista categorías ACL o comandos de una categoría.
+ACL DELUSER|Elimina usuarios ACL y termina sus conexiones.
+ACL DRYRUN|Comprueba si un usuario tiene permiso para ejecutar un comando sin ejecutarlo.
+ACL GENPASS|Genera una contraseña aleatoria para credenciales ACL.
+ACL GETUSER|Consulta reglas y configuración de un usuario ACL.
+ACL LIST|Lista las reglas activas de todos los usuarios ACL.
+ACL LOAD|Recarga las reglas desde el archivo ACL configurado.
+ACL LOG|Consulta o limpia eventos de autenticación y autorización fallidas.
+ACL SAVE|Guarda las reglas activas en el archivo ACL.
+ACL SETUSER|Crea o modifica un usuario y sus reglas de acceso.
+ACL USERS|Lista los nombres de usuarios ACL.
+ACL WHOAMI|Devuelve el usuario autenticado de la conexión actual.
+MEMORY|Agrupa métricas y herramientas sobre memoria del servidor.
+MEMORY DOCTOR|Analiza patrones de uso de memoria y ofrece recomendaciones.
+MEMORY MALLOC-STATS|Muestra estadísticas del asignador de memoria.
+MEMORY PURGE|Solicita al asignador que libere memoria retenida cuando lo admite.
+MEMORY STATS|Devuelve estadísticas estructuradas de memoria.
+MEMORY USAGE|Estima los bytes empleados por una clave y su valor.
+LATENCY|Agrupa herramientas de diagnóstico de latencia.
+LATENCY DOCTOR|Analiza las muestras de eventos de latencia.
+LATENCY GRAPH|Dibuja un gráfico textual de un evento de latencia.
+LATENCY HISTOGRAM|Muestra histogramas de latencia por comando.
+LATENCY HISTORY|Consulta el historial de un evento de latencia.
+LATENCY LATEST|Muestra las últimas muestras por evento de latencia.
+LATENCY RESET|Elimina muestras registradas de eventos de latencia.
+SLOWLOG|Agrupa consultas y reinicio del registro de comandos lentos.
+SLOWLOG GET|Lee entradas del registro de comandos lentos.
+SLOWLOG LEN|Cuenta entradas del registro de comandos lentos.
+SLOWLOG RESET|Vacía el registro de comandos lentos.
+MODULE|Agrupa operaciones sobre módulos cargados en Redis.
+MODULE LIST|Lista módulos cargados y sus versiones.
+MODULE LOAD|Carga una biblioteca de extensión desde el sistema de archivos del servidor.
+MODULE LOADEX|Carga un módulo con configuración y argumentos adicionales.
+MODULE UNLOAD|Descarga un módulo que permite esa operación.
+ASKING|Autoriza la siguiente operación tras recibir una redirección ASK durante migración.
+READONLY|Permite lecturas desde una réplica de Redis Cluster en esta conexión.
+READWRITE|Restaura el comportamiento normal de redirección de una conexión Cluster.
+CLUSTER|Agrupa administración y diagnóstico de Redis Cluster.
+CLUSTER ADDSLOTS|Asigna slots individuales al nodo actual.
+CLUSTER ADDSLOTSRANGE|Asigna intervalos de slots al nodo actual.
+CLUSTER BUMPEPOCH|Incrementa la época de configuración del nodo.
+CLUSTER COUNT-FAILURE-REPORTS|Cuenta informes de fallo recibidos para un nodo.
+CLUSTER COUNTKEYSINSLOT|Cuenta claves locales pertenecientes a un hash slot.
+CLUSTER DELSLOTS|Retira slots individuales de la asignación del nodo.
+CLUSTER DELSLOTSRANGE|Retira intervalos de slots de la asignación del nodo.
+CLUSTER FAILOVER|Solicita una conmutación para promover esta réplica del Cluster.
+CLUSTER FLUSHSLOTS|Retira la asignación de todos los slots del nodo vacío.
+CLUSTER FORGET|Retira un nodo de la tabla de miembros conocida.
+CLUSTER GETKEYSINSLOT|Lista un número limitado de claves de un hash slot.
+CLUSTER INFO|Describe el estado general del Cluster visto por el nodo.
+CLUSTER KEYSLOT|Calcula el hash slot de una clave considerando sus etiquetas.
+CLUSTER LINKS|Muestra conexiones del bus de comunicación del Cluster.
+CLUSTER MEET|Presenta al nodo actual otro nodo para incorporarlo al Cluster.
+CLUSTER MYID|Devuelve el ID del nodo actual.
+CLUSTER MYSHARDID|Devuelve el ID del shard al que pertenece el nodo.
+CLUSTER NODES|Describe nodos conocidos, roles y asignaciones de slots.
+CLUSTER REPLICAS|Lista réplicas de un nodo primario.
+CLUSTER REPLICATE|Configura el nodo actual como réplica de otro nodo.
+CLUSTER RESET|Reinicia la configuración local de pertenencia al Cluster.
+CLUSTER SAVECONFIG|Guarda explícitamente la configuración del Cluster.
+CLUSTER SET-CONFIG-EPOCH|Establece la época inicial de un nodo sin configurar.
+CLUSTER SETSLOT|Configura el propietario o estado de migración de un slot.
+CLUSTER SHARDS|Describe shards, nodos y slots de forma estructurada.
+CLUSTER SLAVES|Nombre antiguo de CLUSTER REPLICAS.
+CLUSTER SLOTS|Describe los rangos de slots; prefiere CLUSTER SHARDS en clientes nuevos.
+SENTINEL|Agrupa supervisión y conmutación automática; requiere un proceso Sentinel.
+SENTINEL CKQUORUM|Comprueba si existen suficientes Sentinels para autorizar una conmutación.
+SENTINEL CONFIG|Lee o modifica configuración global de Sentinel.
+SENTINEL DEBUG|Configura parámetros temporales de depuración de Sentinel.
+SENTINEL FAILOVER|Solicita una conmutación del primario supervisado.
+SENTINEL FLUSHCONFIG|Persiste la configuración actual de Sentinel.
+SENTINEL GET-MASTER-ADDR-BY-NAME|Obtiene dirección y puerto del primario actual por nombre lógico.
+SENTINEL INFO-CACHE|Consulta los últimos datos INFO de instancias supervisadas.
+SENTINEL IS-MASTER-DOWN-BY-ADDR|Intercambia información de fallo y votación entre Sentinels.
+SENTINEL MASTER|Describe un primario supervisado.
+SENTINEL MASTERS|Lista los primarios supervisados.
+SENTINEL MONITOR|Comienza a supervisar un primario y establece el quórum necesario.
+SENTINEL MYID|Devuelve el identificador de este proceso Sentinel.
+SENTINEL PENDING-SCRIPTS|Lista scripts de notificación pendientes en Sentinel.
+SENTINEL REMOVE|Deja de supervisar un primario.
+SENTINEL REPLICAS|Lista réplicas conocidas de un primario supervisado.
+SENTINEL RESET|Reinicia el estado de supervisión de primarios que coinciden con un patrón.
+SENTINEL SENTINELS|Lista otros Sentinels que supervisan un primario.
+SENTINEL SET|Modifica parámetros de supervisión de un primario.
+SENTINEL SIMULATE-FAILURE|Simula fallos de Sentinel para probar la conmutación.
+SENTINEL SLAVES|Nombre antiguo de SENTINEL REPLICAS.

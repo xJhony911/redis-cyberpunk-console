@@ -1,0 +1,232 @@
+import { asciiUpperCase } from '../../core/ascii-case'
+import { defineCommand } from '../../core/command-definition'
+import { numkeysGetKeys } from '../../core/key-specs'
+import { isIntegerToken, t, type ParseContext } from '../../core/command-schema'
+import type { RedisExecutionContext } from '../../core/redis-context'
+import { RedisResult } from '../../core/redis-result'
+import { WrongNumberOfArgumentsError, errors } from '../../core/redis-error'
+import { RedisValue } from '../../core/redis-value'
+import type { RedisDatabase } from '../../state'
+import { scoreValue } from '../helpers'
+import { getSortedMembers } from './helpers'
+import {
+  blockOrTimeOut,
+  blockingTimeoutMs,
+  parseBlockingTimeout,
+} from '../blocking'
+
+type ZsetMultiPopSide = 'min' | 'max'
+
+type ZsetMultiPopArgs = {
+  keys: Buffer[]
+  side: ZsetMultiPopSide
+  count: number
+}
+
+type BlockingZsetMultiPopArgs = ZsetMultiPopArgs & {
+  timeout: number
+}
+
+function parsePositiveZsetPopInteger(
+  token: Buffer,
+  createError: () => Error,
+): number {
+  const raw = token.toString()
+  if (!isIntegerToken(raw)) {
+    throw createError()
+  }
+
+  const value = Number(raw)
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw createError()
+  }
+
+  return value
+}
+
+function parseZsetPopNumKeys(token: Buffer): number {
+  return parsePositiveZsetPopInteger(token, () =>
+    errors.numKeysGreaterThanZero(),
+  )
+}
+
+function parseZsetPopCount(token: Buffer): number {
+  return parsePositiveZsetPopInteger(token, errors.countGreaterThanZero)
+}
+
+function parseZsetPopSide(token: Buffer | undefined): ZsetMultiPopSide {
+  if (!token) throw errors.syntax()
+  const side = asciiUpperCase(token.toString())
+  if (side === 'MIN') return 'min'
+  if (side === 'MAX') return 'max'
+  throw errors.syntax()
+}
+
+function parseZsetMultiPopArgs(
+  input: readonly Buffer[],
+  index: number,
+  ctx: ParseContext,
+  options: { blocking: false },
+): ZsetMultiPopArgs
+function parseZsetMultiPopArgs(
+  input: readonly Buffer[],
+  index: number,
+  ctx: ParseContext,
+  options: { blocking: true },
+): BlockingZsetMultiPopArgs
+function parseZsetMultiPopArgs(
+  input: readonly Buffer[],
+  index: number,
+  ctx: ParseContext,
+  options: { blocking: boolean },
+): ZsetMultiPopArgs | BlockingZsetMultiPopArgs {
+  if (index >= input.length) {
+    throw new WrongNumberOfArgumentsError(ctx.commandName)
+  }
+
+  let cursor = index
+  let timeout: number | undefined
+
+  if (options.blocking) {
+    timeout = parseBlockingTimeout(input[cursor], ctx.profile)
+    cursor++
+  }
+
+  const numKeysToken = input[cursor]
+  if (!numKeysToken) {
+    throw new WrongNumberOfArgumentsError(ctx.commandName)
+  }
+
+  const numKeys = parseZsetPopNumKeys(numKeysToken)
+  cursor++
+
+  const keysEnd = cursor + numKeys
+  if (keysEnd >= input.length) {
+    throw errors.syntax()
+  }
+
+  const keys = Array.from(input.slice(cursor, keysEnd))
+  cursor = keysEnd
+
+  const side = parseZsetPopSide(input[cursor])
+  cursor++
+
+  let count = 1
+  if (cursor < input.length) {
+    const option = asciiUpperCase(input[cursor].toString())
+    if (option !== 'COUNT' || cursor + 2 !== input.length) {
+      throw errors.syntax()
+    }
+
+    count = parseZsetPopCount(input[cursor + 1])
+  }
+
+  if (options.blocking) {
+    return { timeout: timeout!, keys, side, count }
+  }
+
+  return { keys, side, count }
+}
+
+export function tryZsetMultiPop(
+  keys: readonly Buffer[],
+  side: ZsetMultiPopSide,
+  count: number,
+  db: RedisDatabase,
+): RedisResult | null {
+  for (const key of keys) {
+    const zset = db.getSortedSet(key)
+    if (!zset || zset.members.size === 0) continue
+
+    const sorted = getSortedMembers(zset)
+    const candidates = side === 'min' ? sorted : sorted.slice().reverse()
+    const toRemove = candidates.slice(0, count)
+    if (toRemove.length === 0) continue
+
+    // Published as the underlying zpopmin/zpopmax, as real Redis does (#446).
+    db.withOrigin(side === 'min' ? 'zpopmin' : 'zpopmax').updateSortedSet(
+      key,
+      zset => {
+        for (const entry of toRemove) {
+          zset.deleteMember(entry.member)
+        }
+      },
+    )
+
+    return RedisResult.create(
+      RedisValue.array([
+        RedisValue.bulkString(key),
+        RedisValue.array(
+          toRemove.map(entry =>
+            RedisValue.array([
+              RedisValue.bulkString(entry.member),
+              scoreValue(entry.score),
+            ]),
+          ),
+        ),
+      ]),
+    )
+  }
+
+  return null
+}
+
+function blockingZsetMultiPop(
+  keys: readonly Buffer[],
+  timeoutMs: number,
+  side: ZsetMultiPopSide,
+  count: number,
+  ctx: RedisExecutionContext,
+): RedisResult | Promise<RedisResult> {
+  return blockOrTimeOut(
+    ctx,
+    {
+      keys,
+      type: 'zset',
+      timeoutMs: blockingTimeoutMs(timeoutMs),
+      attempt: () => tryZsetMultiPop(keys, side, count, ctx.db),
+    },
+    () => RedisResult.create(RedisValue.nullArray()),
+  )
+}
+
+export const zmpopCommand = defineCommand({
+  name: 'zmpop',
+  rawKeys: numkeysGetKeys(0, 1, 2),
+  since: { redis: '7.0.0', valkey: '7.2.0' },
+  schema: t.custom<ZsetMultiPopArgs>({ min: 3 }, (input, index, ctx) => ({
+    value: parseZsetMultiPopArgs(input, index, ctx, { blocking: false }),
+    nextIndex: input.length,
+  })),
+  flags: ['write'],
+  keys: args => args.keys,
+  execute: (args, ctx) =>
+    tryZsetMultiPop(args.keys, args.side, args.count, ctx.db) ??
+    RedisResult.create(RedisValue.nullArray()),
+})
+
+export const bzmpopCommand = defineCommand({
+  name: 'bzmpop',
+  rawKeys: numkeysGetKeys(0, 2, 3),
+  since: { redis: '7.0.0', valkey: '7.2.0' },
+  schema: t.custom<BlockingZsetMultiPopArgs>(
+    { min: 4 },
+    (input, index, ctx) => ({
+      value: parseZsetMultiPopArgs(input, index, ctx, { blocking: true }),
+      nextIndex: input.length,
+    }),
+  ),
+  flags: ['write', 'blocking'],
+  keys: args => args.keys,
+  execute: (args, ctx) => {
+    const immediate = tryZsetMultiPop(args.keys, args.side, args.count, ctx.db)
+    if (immediate) return immediate
+    return blockingZsetMultiPop(
+      args.keys,
+      args.timeout,
+      args.side,
+      args.count,
+      ctx,
+    )
+  },
+})

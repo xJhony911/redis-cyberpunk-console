@@ -1,0 +1,1004 @@
+{
+  "supported": [
+    "APPEND",
+    "BITCOUNT",
+    "BITFIELD",
+    "BITFIELD_RO",
+    "BITOP",
+    "BITPOS",
+    "COPY",
+    "DBSIZE",
+    "DECR",
+    "DECRBY",
+    "DEL",
+    "DISCARD",
+    "ECHO",
+    "EXEC",
+    "EXISTS",
+    "EXPIRE",
+    "EXPIREAT",
+    "EXPIRETIME",
+    "FLUSHALL",
+    "FLUSHDB",
+    "GEOADD",
+    "GEODIST",
+    "GEOHASH",
+    "GEOPOS",
+    "GEORADIUS",
+    "GEORADIUSBYMEMBER",
+    "GEORADIUSBYMEMBER_RO",
+    "GEORADIUS_RO",
+    "GEOSEARCH",
+    "GEOSEARCHSTORE",
+    "GET",
+    "GETBIT",
+    "GETDEL",
+    "GETEX",
+    "GETRANGE",
+    "GETSET",
+    "HDEL",
+    "HEXISTS",
+    "HGET",
+    "HGETALL",
+    "HINCRBY",
+    "HINCRBYFLOAT",
+    "HKEYS",
+    "HLEN",
+    "HMGET",
+    "HMSET",
+    "HRANDFIELD",
+    "HSCAN",
+    "HSET",
+    "HSETNX",
+    "HSTRLEN",
+    "HVALS",
+    "INCR",
+    "INCRBY",
+    "INCRBYFLOAT",
+    "KEYS",
+    "LCS",
+    "LINDEX",
+    "LINSERT",
+    "LLEN",
+    "LMOVE",
+    "LMPOP",
+    "LPOP",
+    "LPOS",
+    "LPUSH",
+    "LPUSHX",
+    "LRANGE",
+    "LREM",
+    "LSET",
+    "LTRIM",
+    "MGET",
+    "MSET",
+    "MSETNX",
+    "MULTI",
+    "PERSIST",
+    "PEXPIRE",
+    "PEXPIREAT",
+    "PEXPIRETIME",
+    "PFADD",
+    "PFCOUNT",
+    "PFMERGE",
+    "PING",
+    "PSETEX",
+    "PSUBSCRIBE",
+    "PTTL",
+    "PUBLISH",
+    "PUBSUB",
+    "PUNSUBSCRIBE",
+    "RANDOMKEY",
+    "RENAME",
+    "RENAMENX",
+    "RPOP",
+    "RPOPLPUSH",
+    "RPUSH",
+    "RPUSHX",
+    "SADD",
+    "SCAN",
+    "SCARD",
+    "SDIFF",
+    "SDIFFSTORE",
+    "SET",
+    "SETBIT",
+    "SETEX",
+    "SETNX",
+    "SETRANGE",
+    "SINTER",
+    "SINTERCARD",
+    "SINTERSTORE",
+    "SISMEMBER",
+    "SMEMBERS",
+    "SMISMEMBER",
+    "SMOVE",
+    "SORT",
+    "SORT_RO",
+    "SPOP",
+    "SPUBLISH",
+    "SRANDMEMBER",
+    "SREM",
+    "SSCAN",
+    "SSUBSCRIBE",
+    "STRLEN",
+    "SUBSCRIBE",
+    "SUBSTR",
+    "SUNION",
+    "SUNIONSTORE",
+    "SUNSUBSCRIBE",
+    "TIME",
+    "TOUCH",
+    "TTL",
+    "TYPE",
+    "UNLINK",
+    "UNSUBSCRIBE",
+    "UNWATCH",
+    "WATCH",
+    "XACK",
+    "XADD",
+    "XAUTOCLAIM",
+    "XCLAIM",
+    "XDEL",
+    "XGROUP",
+    "XINFO",
+    "XLEN",
+    "XPENDING",
+    "XRANGE",
+    "XREAD",
+    "XREADGROUP",
+    "XREVRANGE",
+    "XSETID",
+    "XTRIM",
+    "ZADD",
+    "ZCARD",
+    "ZCOUNT",
+    "ZDIFF",
+    "ZDIFFSTORE",
+    "ZINCRBY",
+    "ZINTER",
+    "ZINTERCARD",
+    "ZINTERSTORE",
+    "ZLEXCOUNT",
+    "ZMPOP",
+    "ZMSCORE",
+    "ZPOPMAX",
+    "ZPOPMIN",
+    "ZRANDMEMBER",
+    "ZRANGE",
+    "ZRANGEBYLEX",
+    "ZRANGEBYSCORE",
+    "ZRANGESTORE",
+    "ZRANK",
+    "ZREM",
+    "ZREMRANGEBYLEX",
+    "ZREMRANGEBYRANK",
+    "ZREMRANGEBYSCORE",
+    "ZREVRANGE",
+    "ZREVRANGEBYLEX",
+    "ZREVRANGEBYSCORE",
+    "ZREVRANK",
+    "ZSCAN",
+    "ZSCORE",
+    "ZUNION",
+    "ZUNIONSTORE"
+  ],
+  "verified": [
+    {
+      "command": "APPEND",
+      "title": "Construir un texto"
+    },
+    {
+      "command": "APPEND",
+      "title": "Crear si no existe"
+    },
+    {
+      "command": "BITCOUNT",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "BITFIELD",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "BITFIELD_RO",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "BITOP",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "BITPOS",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "COPY",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "DBSIZE",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "DECR",
+      "title": "Crear un contador"
+    },
+    {
+      "command": "DECR",
+      "title": "Actualizar un contador existente"
+    },
+    {
+      "command": "DECRBY",
+      "title": "Crear un contador"
+    },
+    {
+      "command": "DECRBY",
+      "title": "Actualizar un contador existente"
+    },
+    {
+      "command": "DEL",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "DISCARD",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "ECHO",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "EXEC",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "EXISTS",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "EXPIRE",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "EXPIREAT",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "EXPIRETIME",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "GEOADD",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "GEODIST",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "GEOHASH",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "GEOPOS",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "GEORADIUS",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "GEORADIUS_RO",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "GEORADIUSBYMEMBER",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "GEORADIUSBYMEMBER_RO",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "GEOSEARCH",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "GEOSEARCHSTORE",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "GET",
+      "title": "Leer un valor"
+    },
+    {
+      "command": "GET",
+      "title": "Clave ausente"
+    },
+    {
+      "command": "GETBIT",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "GETDEL",
+      "title": "Consumir un valor"
+    },
+    {
+      "command": "GETDEL",
+      "title": "Reintentar el consumo"
+    },
+    {
+      "command": "GETEX",
+      "title": "Renovar una sesión"
+    },
+    {
+      "command": "GETEX",
+      "title": "Retirar la caducidad"
+    },
+    {
+      "command": "GETRANGE",
+      "title": "Extraer un prefijo"
+    },
+    {
+      "command": "GETRANGE",
+      "title": "Leer desde el final"
+    },
+    {
+      "command": "GETSET",
+      "title": "Intercambiar el valor"
+    },
+    {
+      "command": "GETSET",
+      "title": "Alternativa moderna"
+    },
+    {
+      "command": "HDEL",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "HEXISTS",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "HGET",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "HGETALL",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "HINCRBY",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "HINCRBYFLOAT",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "HKEYS",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "HLEN",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "HMGET",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "HMSET",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "HRANDFIELD",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "HSCAN",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "HSET",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "HSETNX",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "HSTRLEN",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "HVALS",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "INCR",
+      "title": "Crear un contador"
+    },
+    {
+      "command": "INCR",
+      "title": "Actualizar un contador existente"
+    },
+    {
+      "command": "INCRBY",
+      "title": "Crear un contador"
+    },
+    {
+      "command": "INCRBY",
+      "title": "Actualizar un contador existente"
+    },
+    {
+      "command": "INCRBYFLOAT",
+      "title": "Sumar decimales"
+    },
+    {
+      "command": "INCRBYFLOAT",
+      "title": "Restar con exponente"
+    },
+    {
+      "command": "KEYS",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "LCS",
+      "title": "Subsecuencia, no subcadena"
+    },
+    {
+      "command": "LCS",
+      "title": "Inspeccionar posiciones"
+    },
+    {
+      "command": "LINDEX",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "LINSERT",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "LLEN",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "LMOVE",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "LMPOP",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "LPOP",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "LPOS",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "LPUSH",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "LPUSHX",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "LRANGE",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "LREM",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "LSET",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "LTRIM",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "MGET",
+      "title": "Leer varios valores"
+    },
+    {
+      "command": "MGET",
+      "title": "Otro tipo de dato"
+    },
+    {
+      "command": "MSET",
+      "title": "Guardar dos claves"
+    },
+    {
+      "command": "MSET",
+      "title": "Sobrescribir una caché"
+    },
+    {
+      "command": "MSETNX",
+      "title": "Crear un grupo completo"
+    },
+    {
+      "command": "MSETNX",
+      "title": "Evitar una escritura parcial"
+    },
+    {
+      "command": "MULTI",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "PERSIST",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "PEXPIRE",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "PEXPIREAT",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "PEXPIRETIME",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "PFADD",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "PFCOUNT",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "PFMERGE",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "PING",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "PSETEX",
+      "title": "Guardar una caché"
+    },
+    {
+      "command": "PSETEX",
+      "title": "Alternativa moderna"
+    },
+    {
+      "command": "PSUBSCRIBE",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "PTTL",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "PUBLISH",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "PUBSUB CHANNELS",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "PUBSUB NUMPAT",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "PUBSUB NUMSUB",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "PUNSUBSCRIBE",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "RENAME",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "RENAMENX",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "RPOP",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "RPOPLPUSH",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "RPUSH",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "RPUSHX",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "SADD",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "SCAN",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "SCARD",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "SDIFF",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "SDIFFSTORE",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "SET",
+      "title": "Guardar y recuperar"
+    },
+    {
+      "command": "SET",
+      "title": "Crear una caché solo una vez"
+    },
+    {
+      "command": "SETBIT",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "SETEX",
+      "title": "Guardar una caché"
+    },
+    {
+      "command": "SETEX",
+      "title": "Alternativa moderna"
+    },
+    {
+      "command": "SETNX",
+      "title": "Crear si está ausente"
+    },
+    {
+      "command": "SETNX",
+      "title": "Alternativa con caducidad"
+    },
+    {
+      "command": "SETRANGE",
+      "title": "Sustituir un fragmento"
+    },
+    {
+      "command": "SETRANGE",
+      "title": "Crear un hueco"
+    },
+    {
+      "command": "SINTER",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "SINTERCARD",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "SINTERSTORE",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "SISMEMBER",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "SMEMBERS",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "SMISMEMBER",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "SMOVE",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "SORT",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "SORT_RO",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "SPOP",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "SRANDMEMBER",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "SREM",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "SSCAN",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "STRLEN",
+      "title": "Medir texto ASCII"
+    },
+    {
+      "command": "STRLEN",
+      "title": "Distinguir bytes y caracteres"
+    },
+    {
+      "command": "SUBSCRIBE",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "SUBSTR",
+      "title": "Extraer un prefijo"
+    },
+    {
+      "command": "SUBSTR",
+      "title": "Leer desde el final"
+    },
+    {
+      "command": "SUNION",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "SUNIONSTORE",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "TIME",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "TOUCH",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "TTL",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "TYPE",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "UNLINK",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "UNSUBSCRIBE",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "UNWATCH",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "WATCH",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "XACK",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "XADD",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "XAUTOCLAIM",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "XCLAIM",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "XDEL",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "XGROUP CREATE",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "XGROUP CREATECONSUMER",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "XGROUP DELCONSUMER",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "XGROUP DESTROY",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "XGROUP SETID",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "XINFO CONSUMERS",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "XINFO GROUPS",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "XINFO STREAM",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "XLEN",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "XPENDING",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "XRANGE",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "XREAD",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "XREADGROUP",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "XREVRANGE",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "XTRIM",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "ZADD",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "ZCARD",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "ZCOUNT",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "ZDIFF",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "ZDIFFSTORE",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "ZINCRBY",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "ZINTER",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "ZINTERCARD",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "ZINTERSTORE",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "ZLEXCOUNT",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "ZMPOP",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "ZMSCORE",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "ZPOPMAX",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "ZPOPMIN",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "ZRANDMEMBER",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "ZRANGE",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "ZRANGEBYLEX",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "ZRANGEBYSCORE",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "ZRANGESTORE",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "ZRANK",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "ZREM",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "ZREMRANGEBYLEX",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "ZREMRANGEBYRANK",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "ZREMRANGEBYSCORE",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "ZREVRANGE",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "ZREVRANGEBYLEX",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "ZREVRANGEBYSCORE",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "ZREVRANK",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "ZSCAN",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "ZSCORE",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "ZUNION",
+      "title": "Demostración reproducible"
+    },
+    {
+      "command": "ZUNIONSTORE",
+      "title": "Demostración reproducible"
+    }
+  ],
+  "scope": "Ejemplos ejecutados sin errores; las aserciones de semántica y resultados están en tests/engine.test.js y tests/learning.test.js. No certifica todas las variantes."
+}

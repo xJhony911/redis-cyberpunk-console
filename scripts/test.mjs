@@ -1,0 +1,10 @@
+import { build } from 'esbuild';
+import { readdir, mkdir, rm } from 'node:fs/promises';
+import { spawnSync } from 'node:child_process';
+const directory = new URL('../.test-build/', import.meta.url);
+await mkdir(directory, { recursive: true });
+const files = (await readdir(new URL('../tests/', import.meta.url))).filter(n => n.endsWith('.test.js'));
+await build({entryPoints: files.map(n => `tests/${n}`), outdir: '.test-build', bundle: true, platform: 'node', format: 'esm', packages: 'external', logLevel: 'warning'});
+const result = spawnSync(process.execPath, ['--test', ...files.map(n => `.test-build/${n}`)], { stdio: 'inherit' });
+await rm(directory, {recursive: true, force: true});
+process.exitCode = result.status ?? 1;

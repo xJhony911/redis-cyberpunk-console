@@ -1,0 +1,135 @@
+import { defineCommand } from '../../core/command-definition'
+import { t } from '../../core/command-schema'
+import { errors } from '../../core/redis-error'
+import { RedisValue } from '../../core/redis-value'
+import { array, bulk, integer, ok, parseInt64Token } from '../helpers'
+import { resolveIndex } from './helpers'
+
+export const llenCommand = defineCommand({
+  name: 'llen',
+  schema: t.object({
+    key: t.key(),
+  }),
+  flags: ['readonly', 'fast'],
+  keys: args => [args.key],
+  execute: (args, ctx) => {
+    const list = ctx.db.getList(args.key)
+    return integer(list ? list.values.length : 0)
+  },
+})
+
+export const lrangeCommand = defineCommand({
+  name: 'lrange',
+  schema: t.object({
+    key: t.key(),
+    start: t.integer(),
+    stop: t.integer(),
+  }),
+  flags: ['readonly'],
+  keys: args => [args.key],
+  execute: (args, ctx) => {
+    const list = ctx.db.getList(args.key)
+    if (!list || list.values.length === 0) return array([])
+
+    let start = resolveIndex(args.start, list.values.length)
+    let stop = resolveIndex(args.stop, list.values.length)
+    start = Math.max(0, start)
+    stop = Math.min(list.values.length - 1, stop)
+    if (start > stop) return array([])
+
+    const slice = list.values.slice(start, stop + 1)
+    return array(slice.map(v => RedisValue.bulkString(v)))
+  },
+})
+
+export const lindexCommand = defineCommand({
+  name: 'lindex',
+  schema: t.object({
+    key: t.key(),
+    // Parsed in execute: real Redis looks the key up (null reply, or
+    // WRONGTYPE) before it reads the index, as a full int64 (#589).
+    index: t.bulk(),
+  }),
+  flags: ['readonly'],
+  keys: args => [args.key],
+  execute: (args, ctx) => {
+    const list = ctx.db.getList(args.key)
+    if (!list) return bulk(null)
+
+    const length = BigInt(list.values.length)
+    const index = parseInt64Token(args.index)
+    const idx = index < 0n ? length + index : index
+    if (idx < 0n || idx >= length) return bulk(null)
+    return bulk(list.values[Number(idx)])
+  },
+})
+
+export const lsetCommand = defineCommand({
+  name: 'lset',
+  schema: t.object({
+    key: t.key(),
+    index: t.integer(),
+    value: t.bulk(),
+  }),
+  flags: ['write'],
+  keys: args => [args.key],
+  execute: (args, ctx) => {
+    const list = ctx.db.getList(args.key)
+    if (!list) throw errors.noSuchKey()
+
+    const idx = resolveIndex(args.index, list.values.length)
+    if (idx < 0 || idx >= list.values.length) throw errors.indexOutOfRange()
+
+    ctx.db.updateList(args.key, list => {
+      list.setAt(idx, args.value)
+    })
+    return ok()
+  },
+})
+
+export const lremCommand = defineCommand({
+  name: 'lrem',
+  schema: t.object({
+    key: t.key(),
+    count: t.integer(),
+    element: t.bulk(),
+  }),
+  flags: ['write'],
+  keys: args => [args.key],
+  execute: (args, ctx) => {
+    const list = ctx.db.getList(args.key)
+    if (!list) return integer(0)
+
+    const result = ctx.db.updateList(args.key, list => {
+      const removed = list.removeMatching(args.count, args.element)
+      return { removed, empty: list.length === 0 }
+    })
+    if (result.empty) ctx.db.delete(args.key)
+    return integer(result.removed)
+  },
+})
+
+export const ltrimCommand = defineCommand({
+  name: 'ltrim',
+  schema: t.object({
+    key: t.key(),
+    start: t.integer(),
+    stop: t.integer(),
+  }),
+  flags: ['write'],
+  keys: args => [args.key],
+  execute: (args, ctx) => {
+    const list = ctx.db.getList(args.key)
+    if (!list) return ok()
+
+    const result = ctx.db.updateList(args.key, list => {
+      let start = resolveIndex(args.start, list.length)
+      let stop = resolveIndex(args.stop, list.length)
+      start = Math.max(0, start)
+      stop = Math.min(list.length - 1, stop)
+      return list.trim(start, stop, { forceDirty: true })
+    })
+    if (result.empty) ctx.db.delete(args.key)
+    return ok()
+  },
+})

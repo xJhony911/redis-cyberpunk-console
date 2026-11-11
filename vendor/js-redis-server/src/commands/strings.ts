@@ -1,0 +1,886 @@
+import { asciiUpperCase } from '../core/ascii-case'
+import { defineCommand } from '../core/command-definition'
+import { setGetKeys } from '../core/key-specs'
+import {
+  t,
+  type CommandSchema,
+  type ParseContext,
+} from '../core/command-schema'
+import {
+  addLongDoubles,
+  parseLongDouble,
+  type LongDouble,
+} from '../core/long-double-token'
+import { formatIncrByFloatResult } from '../core/double-format'
+import type { RedisDatabase } from '../state'
+import {
+  WrongTypeRedisError,
+  WrongNumberOfArgumentsError,
+  errors,
+} from '../core/redis-error'
+import type { RedisExecutionContext } from '../core/redis-context'
+import { RedisResult } from '../core/redis-result'
+import { RedisValue } from '../core/redis-value'
+import type { CompatibilityProfile } from '../core/compatibility/profile'
+import {
+  bulk,
+  deleteForPastDeadline,
+  ensureStringOrMissing,
+  INT64_MAX,
+  INT64_MIN,
+  integer,
+  ok,
+  parseInt64Token,
+  requireNextOptionValue,
+  stringExpireDeadlineMs,
+  type ExpireUnit,
+} from './helpers'
+import { commandDocs, commandKeyArgument } from './introspection'
+
+/**
+ * Largest string this mock will actually materialise, regardless of how high
+ * `proto-max-bulk-len` is set: 512MB, which is Redis' own default for that
+ * parameter.
+ *
+ * `buffer.constants.MAX_LENGTH` is deliberately *not* used. It is the largest
+ * length `Buffer.alloc` will accept as an argument, not the largest it will
+ * serve — `Buffer.alloc` throws `RangeError: Array buffer allocation failed`
+ * at that value and across a wide band below it, and worse, a length like 1e12
+ * is mapped lazily and only kills the process during zero-fill. Either way the
+ * failure escapes the command-error path: a RangeError is not a
+ * `RedisCommandError`, so the adapter answers `-ERR internal server error` and
+ * drops the connection, and the lazy case takes the whole test process with it.
+ *
+ * The ceiling therefore has to be a size the process can genuinely produce, and
+ * a fixed one, so behaviour does not vary with the host's free memory. 512MB is
+ * the smallest value that leaves the default configuration untouched: at the
+ * default `proto-max-bulk-len` the limit below is the binding one and the mock
+ * matches Redis exactly. Above the default the mock refuses with Redis' normal
+ * size error instead of attempting the allocation — a deliberate, loud
+ * divergence, on the principle issue #383 raised: a test double allocating half
+ * a gigabyte is already a problem, and one that vanishes mid-suite is worse
+ * than one that answers an error.
+ */
+export const MAX_MATERIALISABLE_LENGTH = 536870912n
+
+type SetCondition = 'NX' | 'XX'
+
+type SetArgs = {
+  key: Buffer
+  value: Buffer
+  condition?: SetCondition
+  expire?: ExpireOption
+  keepTtl?: boolean
+  get?: boolean
+}
+
+export const getCommand = defineCommand({
+  name: 'get',
+  schema: t.object({
+    key: t.key(),
+  }),
+  flags: ['readonly', 'fast'],
+  introspection: {
+    docs: commandDocs('Returns the string value of a key.', 'string', [
+      commandKeyArgument('key', 0),
+    ]),
+  },
+  keys: args => [args.key],
+  execute: (args, ctx) => bulk(ensureStringOrMissing(ctx.db, args.key)),
+})
+
+export const setCommand = defineCommand({
+  name: 'set',
+  rawKeys: setGetKeys,
+  schema: createSetSchema(),
+  flags: ['write', 'denyoom'],
+  introspection: {
+    docs: commandDocs('Set the string value of a key', 'string', [
+      commandKeyArgument('key', 0),
+      { name: 'value', type: 'string' },
+    ]),
+  },
+  keys: args => [args.key],
+  execute: (args, ctx) => {
+    const existingType = ctx.db.getType(args.key)
+    let oldValue: Buffer | null = null
+
+    if (args.get) {
+      if (existingType === 'string') {
+        oldValue = ctx.db.getString(args.key)
+      } else if (existingType !== null) {
+        throw new WrongTypeRedisError()
+      }
+    }
+
+    if (args.condition === 'NX' && existingType !== null) {
+      return args.get ? bulk(oldValue) : RedisResult.nil()
+    }
+
+    if (args.condition === 'XX' && existingType === null) {
+      return args.get ? bulk(null) : RedisResult.nil()
+    }
+
+    // Valkey 8.0+ never writes a key whose deadline is already past: it
+    // deletes the key if it exists and replies as if it had set it (#527).
+    // Only EXAT / PXAT can be: EX / PX are at least 1, and Valkey resolves
+    // them against the clock reading it compares with.
+    if (
+      args.expire &&
+      isAbsoluteExpire(args.expire) &&
+      resolveExpireAt(args.expire, ctx.server.profile) <= Date.now() &&
+      ctx.server.profile.has('set.past-deadline-deletes')
+    ) {
+      if (existingType !== null) {
+        deleteForPastDeadline(ctx.db, args.key, ctx.server.profile)
+      }
+      return args.get ? bulk(oldValue) : ok()
+    }
+
+    ctx.db.setString(args.key, args.value, {
+      expiresAt: args.expire
+        ? resolveExpireAt(args.expire, ctx.server.profile)
+        : undefined,
+      keepTtl: args.keepTtl,
+      expireEvent: true,
+    })
+
+    if (args.get) {
+      return bulk(oldValue)
+    }
+
+    return ok()
+  },
+})
+
+export const mgetCommand = defineCommand({
+  name: 'mget',
+  schema: t.object({
+    keys: t.variadic(t.key(), { min: 1 }),
+  }),
+  flags: ['readonly'],
+  introspection: {
+    docs: commandDocs('Get the values of all the given keys', 'string', [
+      commandKeyArgument('key', 0, { flags: ['multiple'] }),
+    ]),
+  },
+  keys: args => args.keys,
+  execute: (args, ctx) =>
+    RedisResult.create(
+      RedisValue.array(
+        args.keys.map(key => {
+          const value =
+            ctx.db.getType(key) === 'string' ? ctx.db.getString(key) : null
+          return RedisValue.bulkString(value)
+        }),
+      ),
+    ),
+})
+
+export const appendCommand = defineCommand({
+  name: 'append',
+  schema: t.object({ key: t.key(), value: t.bulk() }),
+  flags: ['write', 'denyoom', 'fast'],
+  keys: args => [args.key],
+  execute: (args, ctx) => {
+    const existing = ensureStringOrMissing(ctx.db, args.key)
+    if (!existing) {
+      // Redis only size-checks APPEND when the key already holds a value; a
+      // fresh value is already bounded by the protocol's own bulk limit.
+      ctx.db.setString(args.key, args.value, { keepTtl: true })
+      return integer(args.value.length)
+    }
+
+    assertWithinProtoMaxBulkLen(
+      ctx,
+      BigInt(existing.length) + BigInt(args.value.length),
+    )
+    const next = Buffer.concat([existing, args.value])
+    ctx.db.setString(args.key, next, { keepTtl: true })
+    return integer(next.length)
+  },
+})
+
+export const strlenCommand = defineCommand({
+  name: 'strlen',
+  schema: t.object({ key: t.key() }),
+  flags: ['readonly', 'fast'],
+  keys: args => [args.key],
+  execute: (args, ctx) => {
+    const existing = ensureStringOrMissing(ctx.db, args.key)
+    return integer(existing?.byteLength ?? 0)
+  },
+})
+
+export const incrCommand = defineCommand({
+  name: 'incr',
+  schema: t.object({ key: t.key() }),
+  flags: ['write', 'fast'],
+  keys: args => [args.key],
+  execute: (args, ctx) => incrementBy(ctx.db, args.key, 1n),
+})
+
+export const decrCommand = defineCommand({
+  name: 'decr',
+  schema: t.object({ key: t.key() }),
+  flags: ['write', 'fast'],
+  keys: args => [args.key],
+  execute: (args, ctx) => incrementBy(ctx.db, args.key, -1n),
+})
+
+export const incrbyCommand = defineCommand({
+  name: 'incrby',
+  schema: t.object({
+    key: t.key(),
+    amount: t.bigInteger({ min: INT64_MIN, max: INT64_MAX }),
+  }),
+  flags: ['write', 'fast'],
+  keys: args => [args.key],
+  execute: (args, ctx) => incrementBy(ctx.db, args.key, args.amount),
+})
+
+export const decrbyCommand = defineCommand({
+  name: 'decrby',
+  schema: t.object({
+    key: t.key(),
+    amount: t.bigInteger({ min: INT64_MIN, max: INT64_MAX }),
+  }),
+  flags: ['write', 'fast'],
+  keys: args => [args.key],
+  execute: (args, ctx) => {
+    // Negating INT64_MIN overflows int64, so Redis rejects it before the op.
+    if (args.amount === INT64_MIN) {
+      throw errors.decrOverflow()
+    }
+    return incrementBy(ctx.db, args.key, -args.amount)
+  },
+})
+
+export const incrbyfloatCommand = defineCommand({
+  name: 'incrbyfloat',
+  schema: t.object({ key: t.key(), amount: t.bulk() }),
+  flags: ['write', 'fast'],
+  keys: args => [args.key],
+  execute: (args, ctx) => {
+    // Redis' order (t_string.c): the type check, then the stored value, then
+    // the increment, so a wrong-type key wins over a bad increment. Both go
+    // through string2ld() (see parseLongDouble): an infinity literal is a
+    // valid operand that only fails the post-arithmetic NaN/Infinity check,
+    // while "nan", "abc", "1e5000" or " 3.5" are parse errors.
+    const existing = ensureStringOrMissing(ctx.db, args.key)
+    const current = existing
+      ? parseIncrByFloatValue(existing)
+      : LONG_DOUBLE_ZERO
+    const increment = parseIncrByFloatValue(args.amount)
+
+    // The sum is a `long double`, like the operands (#512).
+    const next = addLongDoubles(current, increment)
+    if (next === undefined) {
+      throw errors.incrByFloatNanOrInfinity()
+    }
+
+    // ld2string(…, LD_STR_HUMAN): the reply and the stored value (#543).
+    const valueBuf = Buffer.from(formatIncrByFloatResult(next))
+    ctx.db.setString(args.key, valueBuf, { keepTtl: true })
+    return bulk(valueBuf)
+  },
+})
+
+const LONG_DOUBLE_ZERO: LongDouble = {
+  negative: false,
+  mantissa: 0n,
+  exponent: 0,
+}
+
+function parseIncrByFloatValue(raw: Buffer): LongDouble {
+  const value = parseLongDouble(raw)
+  if (value === undefined) {
+    throw errors.expectedFloat()
+  }
+  return value
+}
+
+export const getsetCommand = defineCommand({
+  name: 'getset',
+  schema: t.object({ key: t.key(), value: t.bulk() }),
+  flags: ['write', 'denyoom', 'fast'],
+  keys: args => [args.key],
+  execute: (args, ctx) => {
+    const existing = ensureStringOrMissing(ctx.db, args.key)
+    ctx.db.setString(args.key, args.value)
+    return bulk(existing)
+  },
+})
+
+export const getdelCommand = defineCommand({
+  name: 'getdel',
+  since: { redis: '6.2.0', valkey: '7.2.0' },
+  schema: t.object({ key: t.key() }),
+  flags: ['write', 'fast'],
+  keys: args => [args.key],
+  execute: (args, ctx) => {
+    const existing = ensureStringOrMissing(ctx.db, args.key)
+    if (existing === null) {
+      return bulk(null)
+    }
+    ctx.db.delete(args.key)
+    return bulk(existing)
+  },
+})
+
+export const delifeqCommand = defineCommand({
+  name: 'delifeq',
+  since: { valkey: '9.0.0' },
+  schema: t.object({ key: t.key(), value: t.bulk() }),
+  flags: ['write', 'fast'],
+  introspection: {
+    docs: commandDocs(
+      'Delete key if value matches string.',
+      'string',
+      [
+        { ...commandKeyArgument('key', 0), displayText: 'key' },
+        { name: 'value', type: 'string', displayText: 'value' },
+      ],
+      { since: '9.0.0', complexity: 'O(1)' },
+    ),
+  },
+  keys: args => [args.key],
+  // Valkey 9.0 t_string.c delifeqCommand: the delete is a plain one, so it
+  // signals the key (WATCH), replicates and announces `del` like DEL.
+  execute: (args, ctx) => {
+    const existing = ensureStringOrMissing(ctx.db, args.key)
+    if (existing === null || !existing.equals(args.value)) {
+      return integer(0)
+    }
+    ctx.db.delete(args.key)
+    return integer(1)
+  },
+})
+
+export const setnxCommand = defineCommand({
+  name: 'setnx',
+  schema: t.object({ key: t.key(), value: t.bulk() }),
+  flags: ['write', 'denyoom', 'fast'],
+  keys: args => [args.key],
+  execute: (args, ctx) => {
+    if (ctx.db.getType(args.key) !== null) {
+      return integer(0)
+    }
+    ctx.db.setString(args.key, args.value)
+    return integer(1)
+  },
+})
+
+export const setexCommand = defineCommand({
+  name: 'setex',
+  schema: t.object({
+    key: t.key(),
+    seconds: t.bulk(),
+    value: t.bulk(),
+  }),
+  flags: ['write', 'denyoom'],
+  keys: args => [args.key],
+  execute: (args, ctx) => {
+    ctx.db.setString(args.key, args.value, {
+      expiresAt: stringExpireDeadlineMs(
+        args.seconds,
+        'EX',
+        'setex',
+        ctx.server.profile,
+      ),
+      expireEvent: true,
+    })
+    return ok()
+  },
+})
+
+export const psetexCommand = defineCommand({
+  name: 'psetex',
+  schema: t.object({
+    key: t.key(),
+    milliseconds: t.bulk(),
+    value: t.bulk(),
+  }),
+  flags: ['write', 'denyoom'],
+  keys: args => [args.key],
+  execute: (args, ctx) => {
+    ctx.db.setString(args.key, args.value, {
+      expiresAt: stringExpireDeadlineMs(
+        args.milliseconds,
+        'PX',
+        'psetex',
+        ctx.server.profile,
+      ),
+      expireEvent: true,
+    })
+    return ok()
+  },
+})
+
+export const msetCommand = defineCommand({
+  name: 'mset',
+  schema: createKeyValuePairsSchema(),
+  flags: ['write', 'denyoom'],
+  keys: args => args.map(pair => pair.key),
+  execute: (args, ctx) => {
+    for (const { key, value } of args) {
+      ctx.db.setString(key, value)
+    }
+    return ok()
+  },
+})
+
+export const msetnxCommand = defineCommand({
+  name: 'msetnx',
+  schema: createKeyValuePairsSchema(),
+  flags: ['write', 'denyoom'],
+  keys: args => args.map(pair => pair.key),
+  execute: (args, ctx) => {
+    for (const { key } of args) {
+      if (ctx.db.getType(key) !== null) {
+        return integer(0)
+      }
+    }
+    for (const { key, value } of args) {
+      ctx.db.setString(key, value)
+    }
+    return integer(1)
+  },
+})
+
+export const getrangeCommand = defineCommand({
+  name: 'getrange',
+  schema: t.object({
+    key: t.key(),
+    // Redis reads both ends as int64 and clamps the resolved indexes into
+    // [0, length - 1], so magnitudes above 2^53 are legal input rather than a
+    // parse error. GETRANGE only ever reads an existing value, so
+    // proto-max-bulk-len never applies.
+    start: t.bigInteger({ min: INT64_MIN, max: INT64_MAX }),
+    end: t.bigInteger({ min: INT64_MIN, max: INT64_MAX }),
+  }),
+  flags: ['readonly'],
+  keys: args => [args.key],
+  execute: (args, ctx) => {
+    const existing = ensureStringOrMissing(ctx.db, args.key)
+    if (!existing) {
+      return bulk(Buffer.alloc(0))
+    }
+
+    // Both ends negative with start past end is empty before any index is
+    // resolved, so clamping cannot turn `-1 -100` into the first byte
+    // (t_string.c getrangeCommand, every version).
+    if (args.start < 0n && args.end < 0n && args.start > args.end) {
+      return bulk(Buffer.alloc(0))
+    }
+
+    const length = BigInt(existing.length)
+    let startIdx = args.start < 0n ? length + args.start : args.start
+    let endIdx = args.end < 0n ? length + args.end : args.end
+
+    if (startIdx < 0n) startIdx = 0n
+    // Redis clamps a resolved-negative end up to 0 as well, so `GETRANGE s 0 -6`
+    // on a 5-byte value still returns the first byte rather than an empty bulk.
+    if (endIdx < 0n) endIdx = 0n
+    if (endIdx >= length) endIdx = length - 1n
+
+    if (startIdx > endIdx || startIdx >= length) {
+      return bulk(Buffer.alloc(0))
+    }
+
+    return bulk(existing.slice(Number(startIdx), Number(endIdx) + 1))
+  },
+})
+
+export const substrCommand = defineCommand({
+  ...getrangeCommand,
+  name: 'substr',
+})
+
+export const setrangeCommand = defineCommand({
+  name: 'setrange',
+  schema: t.object({
+    key: t.key(),
+    offset: createSetrangeOffsetSchema(),
+    value: t.bulk(),
+  }),
+  flags: ['write', 'denyoom'],
+  keys: args => [args.key],
+  execute: (args, ctx) => {
+    const existing = ensureStringOrMissing(ctx.db, args.key)
+
+    // Redis short-circuits an empty value before the size check, so a huge
+    // offset with nothing to write is not an error and creates no key.
+    if (args.value.length === 0) {
+      return integer(existing?.length ?? 0)
+    }
+
+    assertWithinProtoMaxBulkLen(ctx, args.offset + BigInt(args.value.length))
+
+    const current = existing ?? Buffer.alloc(0)
+    const requiredSize = Number(args.offset) + args.value.length
+    const target =
+      requiredSize > current.length
+        ? allocateStringBuffer(requiredSize)
+        : current
+
+    if (target !== current) {
+      current.copy(target, 0)
+    }
+
+    args.value.copy(target, Number(args.offset))
+    ctx.db.setString(args.key, target, { keepTtl: true })
+    return integer(target.length)
+  },
+})
+
+export const getexCommand = defineCommand({
+  name: 'getex',
+  since: { redis: '6.2.0', valkey: '7.2.0' },
+  schema: createGetexSchema(),
+  flags: ['write', 'fast'],
+  keys: args => [args.key],
+  execute: (args, ctx) => {
+    const existing = ensureStringOrMissing(ctx.db, args.key)
+    if (existing === null) {
+      return bulk(null)
+    }
+
+    // Only the TTL changes, so real Redis publishes `expire` (or `del` for an
+    // EXAT/PXAT time already past; `expired` on Valkey 8.1+, #527), never
+    // `getex` (#380).
+    if (args.persist) {
+      ctx.db.persist(args.key)
+    } else if (args.expire) {
+      // Only now, past the key lookup and type check: GETEX on a missing key
+      // answers nil whatever the time says (getexCommand, t_string.c).
+      const expiresAt = resolveExpireAt(args.expire, ctx.server.profile)
+      if (isAbsoluteExpire(args.expire) && expiresAt <= Date.now()) {
+        deleteForPastDeadline(ctx.db, args.key, ctx.server.profile)
+      } else {
+        ctx.db.expire(args.key, expiresAt)
+      }
+    }
+
+    return bulk(existing)
+  },
+})
+
+export const stringsCommands = [
+  getCommand,
+  setCommand,
+  mgetCommand,
+  appendCommand,
+  strlenCommand,
+  incrCommand,
+  decrCommand,
+  incrbyCommand,
+  decrbyCommand,
+  incrbyfloatCommand,
+  getsetCommand,
+  getdelCommand,
+  delifeqCommand,
+  setnxCommand,
+  setexCommand,
+  psetexCommand,
+  msetCommand,
+  msetnxCommand,
+  getrangeCommand,
+  substrCommand,
+  setrangeCommand,
+  getexCommand,
+]
+
+function createSetSchema(): CommandSchema<SetArgs> {
+  return t.custom(
+    { min: 2, keys: [0] },
+    (input: readonly Buffer[], index: number, ctx: ParseContext) => {
+      const key = input[index]
+      const value = input[index + 1]
+      if (!key || !value) {
+        throwWrongArity(ctx.commandName)
+      }
+
+      const args: SetArgs = {
+        key,
+        value,
+      }
+
+      let cursor = index + 2
+      while (cursor < input.length) {
+        const option = asciiUpperCase(input[cursor]!.toString())
+
+        if (option === 'NX' || option === 'XX') {
+          if (args.condition) {
+            throw errors.syntax()
+          }
+
+          args.condition = option
+          cursor += 1
+          continue
+        }
+
+        if (option === 'GET') {
+          if (!ctx.profile.has('set.get')) {
+            throw errors.syntax()
+          }
+
+          if (args.get) {
+            throw errors.syntax()
+          }
+
+          args.get = true
+          cursor += 1
+          continue
+        }
+
+        if (option === 'KEEPTTL') {
+          if (args.keepTtl || args.expire) {
+            throw errors.syntax()
+          }
+
+          args.keepTtl = true
+          cursor += 1
+          continue
+        }
+
+        if (
+          option === 'EX' ||
+          option === 'PX' ||
+          option === 'EXAT' ||
+          option === 'PXAT'
+        ) {
+          if (
+            (option === 'EXAT' || option === 'PXAT') &&
+            !ctx.profile.has('set.exat-pxat')
+          ) {
+            throw errors.syntax()
+          }
+
+          if (args.expire || args.keepTtl) {
+            throw errors.syntax()
+          }
+
+          const ttl = requireNextOptionValue(input, cursor + 1)
+          args.expire = { unit: option, token: ttl, command: 'set' }
+          cursor += 2
+          continue
+        }
+
+        throw errors.syntax()
+      }
+
+      if (
+        args.condition === 'NX' &&
+        args.get &&
+        !ctx.profile.has('set.nx-get')
+      ) {
+        throw errors.syntax()
+      }
+
+      // The time is checked once every option parsed, before the key is
+      // read; the deadline itself is computed again when the command runs,
+      // so in MULTI it counts from EXEC.
+      if (args.expire) {
+        stringExpireDeadlineMs(
+          args.expire.token,
+          args.expire.unit,
+          'set',
+          ctx.profile,
+        )
+      }
+
+      return { value: args, nextIndex: input.length }
+    },
+  )
+}
+
+function throwWrongArity(commandName: string): never {
+  throw new WrongNumberOfArgumentsError(commandName)
+}
+
+type KeyValuePair = { key: Buffer; value: Buffer }
+
+type GetexArgs = {
+  key: Buffer
+  expire?: ExpireOption
+  persist?: boolean
+}
+
+// An EX/PX/EXAT/PXAT option as parsed. Relative units are turned into a
+// deadline only when the command runs, so a SET or GETEX queued in MULTI
+// counts its TTL from EXEC, as real Redis does.
+type ExpireOption = {
+  unit: ExpireUnit
+  token: Buffer
+  command: 'set' | 'getex'
+}
+
+function resolveExpireAt(
+  { unit, token, command }: ExpireOption,
+  profile: CompatibilityProfile,
+): number {
+  return stringExpireDeadlineMs(token, unit, command, profile)
+}
+
+function isAbsoluteExpire({ unit }: ExpireOption): boolean {
+  return unit === 'EXAT' || unit === 'PXAT'
+}
+
+function incrementBy(
+  db: RedisDatabase,
+  key: Buffer,
+  delta: bigint,
+): RedisResult {
+  const existing = ensureStringOrMissing(db, key)
+  const current = existing ? parseInt64Token(existing) : 0n
+  const next = current + delta
+  if (next > INT64_MAX || next < INT64_MIN) {
+    throw errors.incrDecrOverflow()
+  }
+  db.setString(key, Buffer.from(next.toString()), { keepTtl: true })
+  return integer(next)
+}
+
+function createKeyValuePairsSchema(): CommandSchema<KeyValuePair[]> {
+  return t.custom(
+    { min: 2, keyRange: { start: 0, step: 2, last: -1 } },
+    (input: readonly Buffer[], index: number, ctx: ParseContext) => {
+      const pairs: KeyValuePair[] = []
+      let cursor = index
+
+      if (cursor >= input.length) {
+        throwWrongArity(ctx.commandName)
+      }
+
+      while (cursor < input.length) {
+        const key = input[cursor]
+        const value = input[cursor + 1]
+        if (!key || !value) {
+          // An odd count the command table accepts (3+ tokens) is MSET's own
+          // check. 6.2 words it `wrong number of arguments for MSET`, for
+          // MSETNX too.
+          if (
+            input.length - index >= 2 &&
+            !ctx.profile.has('error.odd-pairs-arity-wording')
+          ) {
+            throw errors.legacyOddPairs('MSET')
+          }
+          throwWrongArity(ctx.commandName)
+        }
+        pairs.push({ key, value })
+        cursor += 2
+      }
+
+      if (pairs.length === 0) {
+        throwWrongArity(ctx.commandName)
+      }
+
+      return { value: pairs, nextIndex: cursor }
+    },
+  )
+}
+
+// SETRANGE reads its offset as an int64: values above 2^53 are legal input that
+// Redis then rejects with the proto-max-bulk-len error, not a parse error.
+function createSetrangeOffsetSchema(): CommandSchema<bigint> {
+  return t.custom({ min: 1, max: 1 }, (input, index, ctx) => {
+    const token = input[index]
+    if (!token) {
+      throwWrongArity(ctx.commandName)
+    }
+
+    const offset = parseInt64Token(token)
+    if (offset < 0n) {
+      throw errors.offsetOutOfRange()
+    }
+
+    return { value: offset, nextIndex: index + 1 }
+  })
+}
+
+/**
+ * Redis refuses to grow a string past `proto-max-bulk-len` rather than
+ * allocating it (server.c: checkStringLength).
+ *
+ * The effective ceiling is additionally capped at
+ * {@link MAX_MATERIALISABLE_LENGTH}, because `proto-max-bulk-len` is
+ * configurable far past anything this process can allocate.
+ */
+function assertWithinProtoMaxBulkLen(
+  ctx: RedisExecutionContext,
+  totalLength: bigint,
+): void {
+  const configured = ctx.server.protoMaxBulkLen
+  const limit =
+    configured < MAX_MATERIALISABLE_LENGTH
+      ? configured
+      : MAX_MATERIALISABLE_LENGTH
+  if (totalLength > limit) {
+    throw errors.stringExceedsMaxSize()
+  }
+}
+
+/**
+ * Allocate a string buffer, converting an allocation failure into the ordinary
+ * Redis size error. {@link MAX_MATERIALISABLE_LENGTH} already keeps requests
+ * inside what a healthy process can produce; this is the backstop for a host
+ * that is too short on memory to honour even that, so the failure still reaches
+ * the client as `-ERR` on a live connection instead of a `RangeError` that
+ * escapes the command-error path.
+ */
+function allocateStringBuffer(size: number): Buffer {
+  try {
+    return Buffer.alloc(size)
+  } catch {
+    throw errors.stringExceedsMaxSize()
+  }
+}
+
+function createGetexSchema(): CommandSchema<GetexArgs> {
+  return t.custom(
+    { min: 1, keys: [0] },
+    (input: readonly Buffer[], index: number, ctx: ParseContext) => {
+      const key = input[index]
+      if (!key) {
+        throwWrongArity(ctx.commandName)
+      }
+
+      const args: GetexArgs = { key }
+      let cursor = index + 1
+
+      while (cursor < input.length) {
+        const option = asciiUpperCase(input[cursor]!.toString())
+
+        if (option === 'PERSIST') {
+          if (args.persist || args.expire) {
+            throw errors.syntax()
+          }
+          args.persist = true
+          cursor += 1
+          continue
+        }
+
+        if (
+          option === 'EX' ||
+          option === 'PX' ||
+          option === 'EXAT' ||
+          option === 'PXAT'
+        ) {
+          if (args.expire || args.persist) {
+            throw errors.syntax()
+          }
+
+          const ttl = requireNextOptionValue(input, cursor + 1)
+          args.expire = { unit: option, token: ttl, command: 'getex' }
+          cursor += 2
+          continue
+        }
+
+        throw errors.syntax()
+      }
+
+      return { value: args, nextIndex: input.length }
+    },
+  )
+}

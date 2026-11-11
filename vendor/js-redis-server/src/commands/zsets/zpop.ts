@@ -1,0 +1,214 @@
+import { defineCommand } from '../../core/command-definition'
+import { parseClampedLongToken, t } from '../../core/command-schema'
+import type { CompatibilityProfile } from '../../core/compatibility/profile'
+import type { RedisExecutionContext } from '../../core/redis-context'
+import { WrongNumberOfArgumentsError, errors } from '../../core/redis-error'
+import { RedisResult } from '../../core/redis-result'
+import { RedisValue } from '../../core/redis-value'
+import type { RedisDatabase } from '../../state'
+import { array, scorePairs, scoreValue } from '../helpers'
+import { getSortedMembers } from './helpers'
+import {
+  blockOrTimeOut,
+  blockingTimeoutMs,
+  parseBlockingTimeout,
+} from '../blocking'
+
+type ZsetPopSide = 'min' | 'max'
+
+/**
+ * Redis 7.0 reads the ZPOPMIN / ZPOPMAX count with
+ * `getPositiveLongFromObjectOrReply`; 6.2 read any `long` with the integer
+ * error and let a count <= 0 through (see `zset.pop-count-positive`).
+ */
+function zpopCountSchema() {
+  return t.custom<number>((input, index, ctx) => {
+    const token = input[index]
+    if (!token) {
+      throw new WrongNumberOfArgumentsError(ctx.commandName)
+    }
+
+    const count = parseClampedLongToken(token.toString())
+    if (ctx.profile.has('zset.pop-count-positive')) {
+      if (count === undefined || count < 0) {
+        throw errors.positiveCount()
+      }
+    } else if (count === undefined) {
+      throw errors.expectedInteger()
+    }
+
+    return { value: count, nextIndex: index + 1 }
+  })
+}
+
+/** Redis 6.2 answers a count <= 0 with an empty array before the type check. */
+function legacyEmptyCount(
+  count: number | undefined,
+  profile: CompatibilityProfile,
+): boolean {
+  return (
+    count !== undefined && count <= 0 && !profile.has('zset.pop-count-positive')
+  )
+}
+
+export const zpopminCommand = defineCommand({
+  name: 'zpopmin',
+  schema: t.object({ key: t.key(), count: t.optionalLast(zpopCountSchema()) }),
+  flags: ['write', 'fast'],
+  keys: args => [args.key],
+  execute: (args, ctx) => {
+    if (legacyEmptyCount(args.count, ctx.server.profile)) return array([])
+    const zset = ctx.db.getSortedSet(args.key)
+    if (!zset) return array([])
+    const count = args.count ?? 1
+    const sorted = getSortedMembers(zset)
+    const toRemove = sorted.slice(0, count)
+    if (toRemove.length === 0) return array([])
+    ctx.db.updateSortedSet(args.key, z => {
+      for (const entry of toRemove) {
+        z.deleteMember(entry.member)
+      }
+    })
+    return zpopReply(toRemove, args.count !== undefined)
+  },
+})
+
+export const zpopmaxCommand = defineCommand({
+  name: 'zpopmax',
+  schema: t.object({ key: t.key(), count: t.optionalLast(zpopCountSchema()) }),
+  flags: ['write', 'fast'],
+  keys: args => [args.key],
+  execute: (args, ctx) => {
+    if (legacyEmptyCount(args.count, ctx.server.profile)) return array([])
+    const zset = ctx.db.getSortedSet(args.key)
+    if (!zset) return array([])
+    const count = args.count ?? 1
+    const sorted = getSortedMembers(zset).slice().reverse()
+    const toRemove = sorted.slice(0, count)
+    if (toRemove.length === 0) return array([])
+    ctx.db.updateSortedSet(args.key, z => {
+      for (const entry of toRemove) {
+        z.deleteMember(entry.member)
+      }
+    })
+    return zpopReply(toRemove, args.count !== undefined)
+  },
+})
+
+// ZPOPMIN/ZPOPMAX: without a count the reply is a flat `[member, score]`; with
+// an explicit count it is an array of `[member, score]` pairs (nested on RESP3).
+function zpopReply(
+  members: readonly { member: Buffer; score: number }[],
+  hasCount: boolean,
+): RedisResult {
+  if (hasCount) {
+    return RedisResult.create(scorePairs(members))
+  }
+  const [entry] = members
+  return array([RedisValue.bulkString(entry.member), scoreValue(entry.score)])
+}
+
+type BlockingZsetPopArgs = {
+  keys: Buffer[]
+  timeout: number
+}
+
+function parseBlockingZsetPopArgs(
+  input: readonly Buffer[],
+  index: number,
+  commandName: string,
+  profile: CompatibilityProfile,
+): BlockingZsetPopArgs {
+  // BZPOPMIN/BZPOPMAX take `key [key ...] timeout` — at least one key plus the
+  // trailing timeout, so fewer than two remaining tokens is an arity error.
+  if (input.length - index < 2) {
+    throw new WrongNumberOfArgumentsError(commandName)
+  }
+
+  const timeout = parseBlockingTimeout(input[input.length - 1], profile)
+
+  const keys = Array.from(input.slice(index, input.length - 1))
+  return { keys, timeout }
+}
+
+// Pops a single min/max member from the first non-empty sorted set among the
+// keys, returning the flat `[key, member, score]` reply BZPOPMIN/BZPOPMAX use
+// (distinct from ZMPOP's nested shape). Throws WRONGTYPE via getSortedSet if a
+// scanned key holds a non-zset value, matching real Redis.
+function tryBlockingZsetPop(
+  keys: readonly Buffer[],
+  side: ZsetPopSide,
+  db: RedisDatabase,
+): RedisResult | null {
+  for (const key of keys) {
+    const zset = db.getSortedSet(key)
+    if (!zset || zset.members.size === 0) continue
+
+    const sorted = getSortedMembers(zset)
+    const entry = side === 'min' ? sorted[0] : sorted[sorted.length - 1]
+
+    // Published as the underlying zpopmin/zpopmax, as real Redis does (#446).
+    db.withOrigin(side === 'min' ? 'zpopmin' : 'zpopmax').updateSortedSet(
+      key,
+      z => {
+        z.deleteMember(entry.member)
+      },
+    )
+
+    return RedisResult.create(
+      RedisValue.array([
+        RedisValue.bulkString(key),
+        RedisValue.bulkString(entry.member),
+        scoreValue(entry.score),
+      ]),
+    )
+  }
+
+  return null
+}
+
+function blockingZsetPop(
+  keys: readonly Buffer[],
+  timeoutMs: number,
+  side: ZsetPopSide,
+  ctx: RedisExecutionContext,
+): RedisResult | Promise<RedisResult> {
+  return blockOrTimeOut(
+    ctx,
+    {
+      keys,
+      type: 'zset',
+      timeoutMs: blockingTimeoutMs(timeoutMs),
+      attempt: () => tryBlockingZsetPop(keys, side, ctx.db),
+    },
+    () => RedisResult.create(RedisValue.nullArray()),
+  )
+}
+
+function defineBlockingZsetPop(name: string, side: ZsetPopSide) {
+  return defineCommand({
+    name,
+    schema: t.custom<BlockingZsetPopArgs>(
+      { min: 2, keyRange: { start: 0, step: 1, last: -2 } },
+      (input, index, ctx) => ({
+        value: parseBlockingZsetPopArgs(
+          input,
+          index,
+          ctx.commandName,
+          ctx.profile,
+        ),
+        nextIndex: input.length,
+      }),
+    ),
+    flags: ['write', 'blocking'],
+    keys: args => args.keys,
+    execute: (args, ctx) => {
+      const immediate = tryBlockingZsetPop(args.keys, side, ctx.db)
+      if (immediate) return immediate
+      return blockingZsetPop(args.keys, args.timeout, side, ctx)
+    },
+  })
+}
+
+export const bzpopminCommand = defineBlockingZsetPop('bzpopmin', 'min')
+export const bzpopmaxCommand = defineBlockingZsetPop('bzpopmax', 'max')
