@@ -1174,6 +1174,7 @@
   const btnThemeToggle = document.getElementById('btn-theme-toggle');
   const themeLabel = document.getElementById('theme-label');
   const btnExportVault = document.getElementById('btn-export-vault');
+  const btnExportExcel = document.getElementById('btn-export-excel');
   const btnImportVault = document.getElementById('btn-import-vault');
   const fileImportVault = document.getElementById('file-import-vault');
   const btnBenchmark = document.getElementById('btn-benchmark');
@@ -1295,6 +1296,10 @@
     appendTerminalEntry(cmdStr, result);
 
     const firstWord = (cmdStr.split(/\s+/)[0] || '').toUpperCase();
+
+    if (firstWord === 'EXCEL' || cmdStr.toUpperCase() === 'EXPORT EXCEL') {
+      exportVaultToExcel();
+    }
 
     if (result) {
       if (result.type === 'error') {
@@ -1818,6 +1823,227 @@
 
   if (btnExportVault) {
     btnExportVault.addEventListener('click', exportVaultData);
+  }
+
+  // --------------------------------------------------------------------------
+  // Data-Vault Export to Microsoft Excel (SpreadsheetML XML format)
+  // --------------------------------------------------------------------------
+  function exportVaultToExcel() {
+    const store = engine.store;
+    if (store.size === 0) {
+      audio.playError();
+      alert('El Data-Vault está vacío. No hay claves que exportar a Excel.');
+      return;
+    }
+
+    const timestamp = new Date().toLocaleString();
+    const dataByType = {
+      string: [],
+      hash: [],
+      list: [],
+      set: [],
+      zset: []
+    };
+
+    for (let [k, item] of store.entries()) {
+      if (dataByType[item.type]) {
+        dataByType[item.type].push({ key: k, item });
+      }
+    }
+
+    function xmlEscape(val) {
+      return String(val ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&apos;');
+    }
+
+    let xml = `<?xml version="1.0" encoding="UTF-8"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:x="urn:schemas-microsoft-com:office:excel"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:html="http://www.w3.org/TR/REC-html40">
+ <DocumentProperties xmlns="urn:schemas-microsoft-com:office:office">
+  <Title>REDIS DATA-VAULT EXCEL DUMP</Title>
+  <Author>Redis Cyberpunk Console</Author>
+  <Created>${new Date().toISOString()}</Created>
+ </DocumentProperties>
+ <Styles>
+  <Style ss:ID="Header">
+   <Font ss:Bold="1" ss:Color="#FFFFFF" ss:FontName="Segoe UI" ss:Size="11"/>
+   <Interior ss:Color="#03070d" ss:Pattern="Solid"/>
+   <Borders>
+    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="2" ss:Color="#00f3ff"/>
+   </Borders>
+  </Style>
+  <Style ss:ID="Title">
+   <Font ss:Bold="1" ss:Color="#00f3ff" ss:FontName="Segoe UI" ss:Size="14"/>
+   <Interior ss:Color="#060b13" ss:Pattern="Solid"/>
+  </Style>
+  <Style ss:ID="Cell">
+   <Font ss:FontName="Segoe UI" ss:Size="10" ss:Color="#111827"/>
+   <Borders>
+    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
+    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
+   </Borders>
+  </Style>
+  <Style ss:ID="CellType">
+   <Font ss:Bold="1" ss:FontName="Segoe UI" ss:Size="10" ss:Color="#0284c7"/>
+   <Interior ss:Color="#F0F9FF" ss:Pattern="Solid"/>
+  </Style>
+ </Styles>
+`;
+
+    // Sheet 1: RESUMEN
+    xml += ` <Worksheet ss:Name="RESUMEN">
+  <Table>
+   <Column ss:Width="200"/><Column ss:Width="260"/>
+   <Row ss:StyleID="Title"><Cell><Data ss:Type="String">REDIS // NEON-CORE DATA-VAULT</Data></Cell></Row>
+   <Row><Cell ss:StyleID="Cell"><Data ss:Type="String">Fecha de Exportación</Data></Cell><Cell ss:StyleID="Cell"><Data ss:Type="String">${xmlEscape(timestamp)}</Data></Cell></Row>
+   <Row><Cell ss:StyleID="Cell"><Data ss:Type="String">Total de Claves</Data></Cell><Cell ss:StyleID="Cell"><Data ss:Type="Number">${store.size}</Data></Cell></Row>
+   <Row><Cell ss:StyleID="Cell"><Data ss:Type="String">Total Strings</Data></Cell><Cell ss:StyleID="Cell"><Data ss:Type="Number">${dataByType.string.length}</Data></Cell></Row>
+   <Row><Cell ss:StyleID="Cell"><Data ss:Type="String">Total Hashes</Data></Cell><Cell ss:StyleID="Cell"><Data ss:Type="Number">${dataByType.hash.length}</Data></Cell></Row>
+   <Row><Cell ss:StyleID="Cell"><Data ss:Type="String">Total Listas</Data></Cell><Cell ss:StyleID="Cell"><Data ss:Type="Number">${dataByType.list.length}</Data></Cell></Row>
+   <Row><Cell ss:StyleID="Cell"><Data ss:Type="String">Total Sets</Data></Cell><Cell ss:StyleID="Cell"><Data ss:Type="Number">${dataByType.set.length}</Data></Cell></Row>
+   <Row><Cell ss:StyleID="Cell"><Data ss:Type="String">Total Sorted Sets</Data></Cell><Cell ss:StyleID="Cell"><Data ss:Type="Number">${dataByType.zset.length}</Data></Cell></Row>
+  </Table>
+ </Worksheet>
+`;
+
+    // Sheet 2: STRINGS
+    xml += ` <Worksheet ss:Name="STRINGS">
+  <Table>
+   <Column ss:Width="180"/><Column ss:Width="300"/><Column ss:Width="80"/><Column ss:Width="80"/>
+   <Row ss:StyleID="Header">
+    <Cell><Data ss:Type="String">CLAVE (KEY)</Data></Cell>
+    <Cell><Data ss:Type="String">VALOR</Data></Cell>
+    <Cell><Data ss:Type="String">LONGITUD</Data></Cell>
+    <Cell><Data ss:Type="String">TTL (SEG)</Data></Cell>
+   </Row>
+`;
+    dataByType.string.forEach(({ key, item }) => {
+      xml += `   <Row>
+    <Cell ss:StyleID="Cell"><Data ss:Type="String">${xmlEscape(key)}</Data></Cell>
+    <Cell ss:StyleID="Cell"><Data ss:Type="String">${xmlEscape(String(item.value))}</Data></Cell>
+    <Cell ss:StyleID="Cell"><Data ss:Type="Number">${String(item.value).length}</Data></Cell>
+    <Cell ss:StyleID="Cell"><Data ss:Type="Number">${item.ttl ?? -1}</Data></Cell>
+   </Row>\n`;
+    });
+    xml += `  </Table>\n </Worksheet>\n`;
+
+    // Sheet 3: HASHES
+    xml += ` <Worksheet ss:Name="HASHES">
+  <Table>
+   <Column ss:Width="160"/><Column ss:Width="160"/><Column ss:Width="280"/><Column ss:Width="80"/>
+   <Row ss:StyleID="Header">
+    <Cell><Data ss:Type="String">CLAVE HASH</Data></Cell>
+    <Cell><Data ss:Type="String">CAMPO (FIELD)</Data></Cell>
+    <Cell><Data ss:Type="String">VALOR</Data></Cell>
+    <Cell><Data ss:Type="String">TTL (SEG)</Data></Cell>
+   </Row>
+`;
+    dataByType.hash.forEach(({ key, item }) => {
+      for (let f in item.value) {
+        xml += `   <Row>
+    <Cell ss:StyleID="Cell"><Data ss:Type="String">${xmlEscape(key)}</Data></Cell>
+    <Cell ss:StyleID="Cell"><Data ss:Type="String">${xmlEscape(f)}</Data></Cell>
+    <Cell ss:StyleID="Cell"><Data ss:Type="String">${xmlEscape(String(item.value[f]))}</Data></Cell>
+    <Cell ss:StyleID="Cell"><Data ss:Type="Number">${item.ttl ?? -1}</Data></Cell>
+   </Row>\n`;
+      }
+    });
+    xml += `  </Table>\n </Worksheet>\n`;
+
+    // Sheet 4: LISTAS
+    xml += ` <Worksheet ss:Name="LISTAS">
+  <Table>
+   <Column ss:Width="160"/><Column ss:Width="60"/><Column ss:Width="300"/><Column ss:Width="80"/>
+   <Row ss:StyleID="Header">
+    <Cell><Data ss:Type="String">CLAVE LISTA</Data></Cell>
+    <Cell><Data ss:Type="String">ÍNDICE</Data></Cell>
+    <Cell><Data ss:Type="String">ELEMENTO</Data></Cell>
+    <Cell><Data ss:Type="String">TTL (SEG)</Data></Cell>
+   </Row>
+`;
+    dataByType.list.forEach(({ key, item }) => {
+      item.value.forEach((v, idx) => {
+        xml += `   <Row>
+    <Cell ss:StyleID="Cell"><Data ss:Type="String">${xmlEscape(key)}</Data></Cell>
+    <Cell ss:StyleID="Cell"><Data ss:Type="Number">${idx}</Data></Cell>
+    <Cell ss:StyleID="Cell"><Data ss:Type="String">${xmlEscape(String(v))}</Data></Cell>
+    <Cell ss:StyleID="Cell"><Data ss:Type="Number">${item.ttl ?? -1}</Data></Cell>
+   </Row>\n`;
+      });
+    });
+    xml += `  </Table>\n </Worksheet>\n`;
+
+    // Sheet 5: SETS
+    xml += ` <Worksheet ss:Name="SETS">
+  <Table>
+   <Column ss:Width="180"/><Column ss:Width="280"/><Column ss:Width="80"/>
+   <Row ss:StyleID="Header">
+    <Cell><Data ss:Type="String">CLAVE SET</Data></Cell>
+    <Cell><Data ss:Type="String">MIEMBRO ÚNICO</Data></Cell>
+    <Cell><Data ss:Type="String">TTL (SEG)</Data></Cell>
+   </Row>
+`;
+    dataByType.set.forEach(({ key, item }) => {
+      Array.from(item.value).forEach(mem => {
+        xml += `   <Row>
+    <Cell ss:StyleID="Cell"><Data ss:Type="String">${xmlEscape(key)}</Data></Cell>
+    <Cell ss:StyleID="Cell"><Data ss:Type="String">${xmlEscape(String(mem))}</Data></Cell>
+    <Cell ss:StyleID="Cell"><Data ss:Type="Number">${item.ttl ?? -1}</Data></Cell>
+   </Row>\n`;
+      });
+    });
+    xml += `  </Table>\n </Worksheet>\n`;
+
+    // Sheet 6: SORTED SETS
+    xml += ` <Worksheet ss:Name="SORTED_SETS">
+  <Table>
+   <Column ss:Width="160"/><Column ss:Width="100"/><Column ss:Width="240"/><Column ss:Width="80"/>
+   <Row ss:StyleID="Header">
+    <Cell><Data ss:Type="String">CLAVE ZSET</Data></Cell>
+    <Cell><Data ss:Type="String">PUNTUACIÓN (SCORE)</Data></Cell>
+    <Cell><Data ss:Type="String">MIEMBRO</Data></Cell>
+    <Cell><Data ss:Type="String">TTL</Data></Cell>
+   </Row>
+`;
+    dataByType.zset.forEach(({ key, item }) => {
+      item.value.forEach(v => {
+        xml += `   <Row>
+    <Cell ss:StyleID="Cell"><Data ss:Type="String">${xmlEscape(key)}</Data></Cell>
+    <Cell ss:StyleID="Cell"><Data ss:Type="Number">${v.score}</Data></Cell>
+    <Cell ss:StyleID="Cell"><Data ss:Type="String">${xmlEscape(String(v.member))}</Data></Cell>
+    <Cell ss:StyleID="Cell"><Data ss:Type="Number">${item.ttl ?? -1}</Data></Cell>
+   </Row>\n`;
+      });
+    });
+    xml += `  </Table>\n </Worksheet>\n</Workbook>`;
+
+    const blob = new Blob([xml], { type: 'application/vnd.ms-excel' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `redis-datavault-${Date.now()}.xls`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    audio.playSuccess();
+    appendTerminalEntry('EXPORT EXCEL', {
+      type: 'string',
+      raw: `[EXCEL DUMP OK] Libro de trabajo generado con pestañas estructuradas: '${a.download}'.`
+    });
+  }
+
+  if (btnExportExcel) {
+    btnExportExcel.addEventListener('click', exportVaultToExcel);
   }
 
   // Sound Toggle

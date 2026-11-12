@@ -108,6 +108,33 @@ La consola incorpora un motor de estilos intercambiable en 1 clic (con persisten
 
 ---
 
+## 💻 Ejecución desde Terminal en Windows (EXE & Integración con Excel)
+
+Además de la interfaz web, el proyecto incluye una **aplicación de consola ejecutable nativa para Windows (`.exe`)** con el motor Redis completo en memoria, visualizador ASCII del Data-Vault, suite de misiones e **integración directa con Microsoft Excel**:
+
+### 1. Iniciar la Terminal Ejecutable
+Puedes abrir la consola de dos formas directas:
+* **Doble clic en `Iniciar_Cyber_Redis.bat`** o ejecuta en tu PowerShell / CMD:
+```powershell
+.\redis-cyberpunk.exe
+```
+*(También puedes ejecutar `python cli.py` si prefieres correr el código fuente directamente).*
+
+### 2. Comandos Especiales de la Terminal
+| Comando | Función en la Terminal |
+| :--- | :--- |
+| **`EXCEL`** | **Genera y abre automáticamente un libro de cálculo Microsoft Excel (`.xls` / `.csv`) con hojas separadas para Resumen, Strings, Hashes, Listas, Sets y Sorted Sets.** |
+| **`VAULT`** | Muestra gráficamente en cajas ASCII holográficas el contenido de la memoria RAM virtual en tiempo real. |
+| **`BENCHMARK`** | Dispara una prueba de estrés de 100 operaciones y reporta Throughput (ops/sec) y latencia. |
+| **`MISSIONS`** | Abre el panel de adiestramiento con las 6 misiones tácticas Netrunner, cálculo de XP y rango. |
+| **`SEED`** | Carga el conjunto de claves y mercenarios del universo Cyberpunk. |
+| **`THEME`** | Alterna la paleta de colores ANSI de la terminal entre **Cyberpunk HUD** y **Neón Minimalista**. |
+| **`EXPORT`** | Exporta la memoria simultáneamente a Excel (`.xls`), `.csv` y `.json`. |
+| **`IMPORT <archivo>`** | Restaura un respaldo JSON directamente a la memoria de la terminal. |
+| **`CLEAR`** / **`QUIT`** | Limpia la consola o finaliza la sesión con secuencia de apagado. |
+
+---
+
 ## 🧪 Laboratorio Real en Windows (Docker)
 
 Si deseas conectar o probar los mismos comandos en un servidor Redis real con Docker en tu PowerShell:
