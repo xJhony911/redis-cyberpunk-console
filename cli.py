@@ -966,7 +966,7 @@ def main():
 
     while True:
         try:
-            user_input = input(f"{prompt_symbol} ").strip()
+            user_input = input(f"{prompt_symbol} ").strip().lstrip('\ufeff')
         except (KeyboardInterrupt, EOFError):
             print(f"\n{c('red', 'Desconexión de sesión.')}")
             break
