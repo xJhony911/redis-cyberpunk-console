@@ -1,0 +1,189 @@
+import type { RedisCluster } from './cluster-server'
+import { setEncodingRules } from './commands/sets'
+import { zsetEncodingRules } from './commands/zsets/helpers'
+import type { RedisDatabase, RedisServerState } from './state'
+
+/**
+ * Public seeding contract for {@link RedisMock}. Callers describe data with
+ * plain keys/types/values (plus optional `ttlMs` and `db`); the mock owns the
+ * conversion into the internal {@link RedisDataValue} representation and the
+ * placement onto the right database (and, in cluster mode, the right node).
+ *
+ * Streams are intentionally not seedable yet — their public entry shape (entry
+ * ids, fields, consumer groups) is not finalized, and exposing the internal
+ * stream state would leak implementation details.
+ */
+export type SeedEntry =
+  | {
+      key: string
+      type: 'string'
+      value: string | number
+      ttlMs?: number
+      db?: number
+    }
+  | {
+      key: string
+      type: 'hash'
+      value: Record<string, string | number>
+      ttlMs?: number
+      db?: number
+    }
+  | {
+      key: string
+      type: 'list'
+      value: (string | number)[]
+      ttlMs?: number
+      db?: number
+    }
+  | {
+      key: string
+      type: 'set'
+      value: (string | number)[]
+      ttlMs?: number
+      db?: number
+    }
+  | {
+      key: string
+      type: 'zset'
+      value: Record<string, number>
+      ttlMs?: number
+      db?: number
+    }
+
+function toBuffer(value: string | number): Buffer {
+  return Buffer.from(typeof value === 'number' ? String(value) : value)
+}
+
+function writeEntry(
+  db: RedisDatabase,
+  entry: SeedEntry,
+  server: RedisServerState,
+): void {
+  const key = Buffer.from(entry.key)
+
+  switch (entry.type) {
+    case 'string':
+      db.setString(key, toBuffer(entry.value))
+      break
+    case 'hash':
+      db.updateHash(key, hash => {
+        for (const [field, value] of Object.entries(entry.value)) {
+          hash.setField(Buffer.from(field), toBuffer(value))
+        }
+      })
+      break
+    case 'list':
+      db.updateList(key, list => {
+        list.pushRight(entry.value.map(toBuffer))
+      })
+      break
+    case 'set': {
+      // Seeded like `SADD key ...members`, so an integer set is an intset.
+      const members = entry.value.map(toBuffer)
+      if (members.length === 0) break
+      const rules = setEncodingRules(server)
+      db.updateSet(key, set => {
+        set.prepareForAdd(members[0], members.length, rules)
+        for (const member of members) {
+          set.addMember(member, rules)
+        }
+      })
+      break
+    }
+    case 'zset': {
+      // Seeded like `ZADD key ...pairs`, so a large one is a skiplist (#512).
+      const pairs = Object.entries(entry.value)
+      if (pairs.length === 0) break
+      const rules = zsetEncodingRules(server)
+      db.updateSortedSet(key, zset => {
+        zset.prepareForAdd(
+          pairs.map(([member]) => Buffer.from(member)),
+          rules,
+        )
+        for (const [member, score] of pairs) {
+          zset.addScore(Buffer.from(member), score, rules)
+        }
+      })
+      break
+    }
+  }
+
+  if (entry.ttlMs !== undefined) {
+    if (!Number.isFinite(entry.ttlMs) || entry.ttlMs <= 0) {
+      throw new Error(`Invalid ttlMs ${entry.ttlMs} for key "${entry.key}"`)
+    }
+    db.expire(key, Date.now() + entry.ttlMs)
+  }
+}
+
+/**
+ * Run `write` under the server's serialization turn so seeding never
+ * interleaves with an in-flight command.
+ */
+async function withServerTurn(
+  state: RedisServerState,
+  write: () => void,
+): Promise<void> {
+  const turn = await state.turnQueue.waitTurn()
+  try {
+    write()
+  } finally {
+    turn.release()
+  }
+}
+
+export async function seedStandalone(
+  state: RedisServerState,
+  entries: readonly SeedEntry[],
+): Promise<void> {
+  // One turn covers every database, so the whole batch lands atomically: no
+  // client observes a half-applied seed.
+  await withServerTurn(state, () => {
+    for (const entry of entries) {
+      writeEntry(state.getDatabase(entry.db ?? 0), entry, state)
+    }
+  })
+}
+
+/**
+ * The minimal cluster shape `seedCluster` needs: a topology to slot keys and the
+ * per-node `RedisServerState` to write into. Both the socket-backed
+ * {@link RedisCluster} (`.nodes[].server`) and the TCP-free `buildClusterNodes`
+ * product satisfy this structurally, so the in-memory ioredis mock can reuse the
+ * same seeder.
+ */
+export type SeedClusterTarget = {
+  topology: RedisCluster['topology']
+  nodes: readonly { id: string; server: RedisServerState }[]
+}
+
+export async function seedCluster(
+  cluster: SeedClusterTarget,
+  entries: readonly SeedEntry[],
+): Promise<void> {
+  for (const entry of entries) {
+    const key = Buffer.from(entry.key)
+    const slot = cluster.topology.calculateSlot(key)
+    const owner = cluster.topology.getSlotOwner(slot)
+    if (!owner) {
+      throw new Error(
+        `No master owns slot ${slot} for key "${entry.key}"; cannot seed`,
+      )
+    }
+
+    const handle = cluster.nodes.find(node => node.id === owner.id)
+    if (!handle) {
+      throw new Error(`Missing node handle for slot owner ${owner.id}`)
+    }
+
+    // Writing into the master's keyspace fires mutation events that the
+    // existing replication links propagate to replicas — no extra work here.
+    await withServerTurn(handle.server, () =>
+      writeEntry(
+        handle.server.getDatabase(entry.db ?? 0),
+        entry,
+        handle.server,
+      ),
+    )
+  }
+}

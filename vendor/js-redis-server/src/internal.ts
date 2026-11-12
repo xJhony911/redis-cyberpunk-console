@@ -1,0 +1,247 @@
+// Deep internals — building blocks for power users who assemble the pipeline by
+// hand (custom commands, policies, transports, schema parsing, Lua, …).
+//
+// Published as the `js-redis-server/core` subpath. The package root
+// (`js-redis-server`) intentionally exposes only the curated consumer facade;
+// import from this subpath when you need these lower-level pieces.
+
+export type {
+  CommandCapabilities,
+  CommandExecutionResult,
+  CommandFlag,
+  CommandDefinition,
+  CommandPlan,
+  KeyWithFlags,
+} from './core/command-definition'
+
+export type {
+  CommandSchema,
+  InferSchema,
+  ParseContext,
+  ParseNodeResult,
+} from './core/command-schema'
+
+export type {
+  RedisClientSession,
+  ClientSessionMode,
+  ParkHandler,
+  ParkRequest,
+  PubSubKind,
+  RedisExecutionContext,
+} from './core/redis-context'
+
+export type {
+  ExpirationState,
+  KeyspaceEntry,
+  KeyspaceNotifyFlag,
+  KeyspaceNotifyFlags,
+  RedisClusterNode,
+  RedisClusterNodeRole,
+  RedisDataTypeName,
+  RedisDataValue,
+  RedisHashData,
+  RedisHashField,
+  RedisListData,
+  RedisMonitorCommandEvent,
+  RedisMonitorCommandListener,
+  RedisMutationEvent,
+  RedisMutationListener,
+  RedisServerStateOptions,
+  RedisSetData,
+  RedisSortedSetData,
+  RedisSortedSetMember,
+  RedisStreamData,
+  RedisStringData,
+  SetOptions,
+  Unsubscribe,
+} from './state'
+
+export type { RedisResultOptions } from './core/redis-result'
+export type { RespEncodeOptions, RespVersion } from './core/resp-encoder'
+export type { RedisTurnHandle } from './core/turn-queue'
+export type {
+  CompatibilityProfile,
+  CompatibilitySpec,
+  FeatureId,
+  RedisFlavor,
+  VersionGate,
+} from './core/compatibility'
+export type { ClientSessionOptions } from './core/client-session'
+export type { ConnectionTransport } from './core/transports/connection-transport'
+export type { SocketConnectionTransportOptions } from './core/transports/socket-connection-transport'
+export type {
+  Resp2CommandFrame,
+  Resp2SessionAdapterOptions,
+} from './core/transports/resp2'
+
+export { ClientSession } from './core/client-session'
+export { CommandExecutor } from './core/command-executor'
+export { CommandRegistry } from './core/command-registry'
+export { defineCommand } from './core/command-definition'
+export { t, parseCommandArgs } from './core/command-schema'
+export {
+  FEATURE_GATES,
+  gateSatisfied,
+  parseVersion,
+  resolveCompatibilityProfile,
+} from './core/compatibility'
+export {
+  createAuthPolicy,
+  createClusterPolicy,
+  createTransactionPolicy,
+} from './core/execution-policies'
+export {
+  createDefaultParkHandler,
+  createNonBlockingParkHandler,
+} from './core/redis-context'
+export {
+  RedisLuaRuntime,
+  createRedisLuaRuntime,
+  setLuaWasmLoadOptions,
+  luaReplyToRedisValue,
+  type LuaReplyValue,
+} from './core/lua-runtime'
+export { RedisValue } from './core/redis-value'
+export { RedisResult } from './core/redis-result'
+export { encodeRedisResult, encodeRedisValue } from './core/resp-encoder'
+export { formatMonitorTimestamp, monitorTimestampMicros } from './core/clock'
+export { SerialTurnQueue } from './core/turn-queue'
+export {
+  REDIS_CLUSTER_SLOT_COUNT,
+  RedisClusterTopology,
+  RedisDatabase,
+  RedisServerState,
+  RedisMonitorFeed,
+  RedisMutationBus,
+  RedisFunctionRegistry,
+  RedisPubSubBroker,
+  RedisScriptCache,
+  cloneRedisDataValue,
+  createHashData,
+  createListData,
+  createSetData,
+  createSortedSetData,
+  createStringData,
+} from './state'
+export {
+  aclCommand,
+  clientCommand,
+  connectionCommands,
+  createRedisCommandExecutor,
+  createRedisCommandRegistry,
+  commandCommand,
+  copyCommand,
+  createClusterCommands,
+  dbsizeCommand,
+  delCommand,
+  discardCommand,
+  existsCommand,
+  evalCommand,
+  evalRoCommand,
+  evalshaCommand,
+  evalshaRoCommand,
+  execCommand,
+  fcallCommand,
+  fcallRoCommand,
+  expireCommand,
+  expiretimeCommand,
+  pexpiretimeCommand,
+  flushallCommand,
+  flushdbCommand,
+  getCommand,
+  functionCommand,
+  hscanCommand,
+  keysCommand,
+  keysCommands,
+  mgetCommand,
+  multiCommand,
+  monitorCommand,
+  monitorCommands,
+  persistCommand,
+  pexpireCommand,
+  pingCommand,
+  pttlCommand,
+  quitCommand,
+  randomkeyCommand,
+  readonlyCommand,
+  readwriteCommand,
+  redisCommandDefinitions,
+  scanCommand,
+  scanCommands,
+  selectCommand,
+  setCommand,
+  shutdownCommand,
+  slowlogCommand,
+  scriptCommand,
+  scriptsCommands,
+  sscanCommand,
+  stringsCommands,
+  transactionCommands,
+  ttlCommand,
+  typeCommand,
+  unwatchCommand,
+  watchCommand,
+  zscanCommand,
+} from './commands'
+
+// Transport internals
+export {
+  Resp2CommandDecoder,
+  Resp2ParseError,
+  Resp2SessionAdapter,
+} from './core/transports/resp2'
+export { SocketConnectionTransport } from './core/transports/socket-connection-transport'
+// Socketless connection layer — drive a session over any transport without a
+// TCP server (`attachSession`), a net.Socket-shaped in-memory wire
+// (`createVirtualConnection`), and a synthetic `host:port → pipeline` resolver
+// for following cluster `MOVED` redirects in-process (`InMemoryNodeRegistry`).
+export {
+  attachSession,
+  type AttachSessionOptions,
+  type AttachedSession,
+} from './core/transports/attach-session'
+export {
+  createVirtualConnection,
+  type CreateVirtualConnectionOptions,
+  type VirtualClientSocket,
+  type VirtualConnection,
+} from './core/transports/virtual-connection'
+export {
+  InMemoryNodeRegistry,
+  type NodePipeline,
+  type RegisteredNode,
+} from './client-mocks/node-registry'
+
+// Pipeline assembly building blocks — the pieces `createRedisMock` /
+// `createRedisServer` / `createRedisCluster` wire together. Power users who
+// assemble the pipeline by hand reach for these directly.
+export {
+  Resp2Server,
+  type Resp2ServerOptions,
+} from './core/transports/resp2/server'
+export { computeSlotRange, type RedisClusterOptions } from './cluster'
+export {
+  RedisCluster,
+  createRedisCluster,
+  type RedisClusterNodeHandle,
+} from './cluster-server'
+
+// Client-visible error classes (also re-exported from the package root) and
+// the reply-body helpers. The `errors` message factories stay internal: a
+// custom command builds its own reply with `new RedisCommandError(message)`.
+export {
+  errorReplyBody,
+  errorReplyBytes,
+  ExecCommandAbortError,
+  NoAuthError,
+  RedisAskError,
+  RedisClusterDownError,
+  RedisCommandError,
+  RedisCrossSlotError,
+  RedisMovedError,
+  RedisTryAgainError,
+  UnknownRedisCommandError,
+  UnknownSubcommandError,
+  WrongNumberOfArgumentsError,
+  WrongTypeRedisError,
+} from './core/redis-error'

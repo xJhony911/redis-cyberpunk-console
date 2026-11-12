@@ -1,0 +1,268 @@
+import type { CommandKeySpec } from '../command-definition'
+import {
+  REDIS_62,
+  REDIS_70,
+  REDIS_72,
+  REDIS_74,
+  REDIS_80,
+  VALKEY_80,
+  VALKEY_90,
+} from './command-table-data'
+import {
+  gateSatisfied,
+  type CompatibilityProfile,
+  type VersionGate,
+} from './profile'
+
+/**
+ * A command-table entry's `COMMAND INFO` metadata that nothing in a command's
+ * definition can derive: its flags, ACL categories, tips and key specs, as a
+ * real server reports them. Arity and the legacy first/last/step key range are
+ * not here. Arity comes from the definition (`commandTableArity`); the key
+ * range is folded from these key specs on 7.0+ and derived from the schema
+ * on 6.2 or when an entry has no key specs (`legacyKeyRange`).
+ * tests/core/command-schema-layout.test.ts keeps the two in agreement.
+ */
+export type CommandTableEntry = {
+  readonly flags: readonly string[]
+  readonly categories: readonly string[]
+  readonly tips?: readonly string[]
+  readonly keySpecs?: readonly CommandKeySpec[]
+}
+
+/**
+ * The entries of one version that differ from the version it is derived from:
+ * the fields that changed, or `null` for a command it does not have.
+ */
+export type CommandTableDelta = Readonly<
+  Record<string, Partial<CommandTableEntry> | null>
+>
+
+type TableSource = {
+  id: string
+  gate: VersionGate
+  base: Readonly<Record<string, CommandTableEntry>> | (() => ResolvedTable)
+  delta?: CommandTableDelta
+  /** Whether the version has tips and key specs (Redis 7.0+ / Valkey 7.2+). */
+  extended: boolean
+}
+
+type ResolvedTable = ReadonlyMap<string, CommandTableEntry>
+
+const cache = new Map<string, ResolvedTable>()
+
+function resolved(source: TableSource): ResolvedTable {
+  const hit = cache.get(source.id)
+  if (hit) {
+    return hit
+  }
+
+  const table = new Map(
+    typeof source.base === 'function'
+      ? source.base()
+      : Object.entries(source.base),
+  )
+  for (const [name, change] of Object.entries(source.delta ?? {})) {
+    if (change === null) {
+      table.delete(name)
+      continue
+    }
+    const previous = table.get(name)
+    table.set(name, { flags: [], categories: [], ...previous, ...change })
+  }
+  if (!source.extended) {
+    for (const [name, { flags, categories }] of table) {
+      table.set(name, { flags, categories })
+    }
+  }
+  cache.set(source.id, table)
+  return table
+}
+
+const redis80: TableSource = {
+  id: 'redis-8.0',
+  gate: { redis: '8.0.0' },
+  base: REDIS_80,
+  extended: true,
+}
+const redis74: TableSource = {
+  id: 'redis-7.4',
+  gate: { redis: '7.4.0' },
+  base: () => resolved(redis80),
+  delta: REDIS_74,
+  extended: true,
+}
+const redis72: TableSource = {
+  id: 'redis-7.2',
+  gate: { redis: '7.2.0', valkey: '7.2.0' },
+  base: () => resolved(redis74),
+  delta: REDIS_72,
+  extended: true,
+}
+const redis70: TableSource = {
+  id: 'redis-7.0',
+  gate: { redis: '7.0.0' },
+  base: () => resolved(redis72),
+  delta: REDIS_70,
+  extended: true,
+}
+const redis62: TableSource = {
+  id: 'redis-6.2',
+  gate: { redis: '0.0.0', valkey: '0.0.0' },
+  base: () => resolved(redis70),
+  delta: REDIS_62,
+  extended: false,
+}
+const valkey80: TableSource = {
+  id: 'valkey-8.0',
+  gate: { valkey: '8.0.0' },
+  base: () => resolved(redis72),
+  delta: VALKEY_80,
+  extended: true,
+}
+const valkey90: TableSource = {
+  id: 'valkey-9.0',
+  gate: { valkey: '9.0.0' },
+  base: () => resolved(valkey80),
+  delta: VALKEY_90,
+  extended: true,
+}
+
+/**
+ * The captured command tables, newest first: a profile reads the first one
+ * whose gate it satisfies. Captured by scripts/capture-command-table.ts from
+ * the patch releases the rest of the compatibility gates are verified
+ * against: redis-server 6.2.24, 7.0.15, 7.2.4, 7.4.4, 8.0.6 (8.0.0 answers
+ * the same) and valkey 8.0.11 / 9.0.6. Valkey 7.2 reads Redis 7.2's table.
+ * Patch releases do change the table, so recapture from the same versions:
+ * 7.4.11 marks the SUBSCRIBE family `denyoom` (not modelled); valkey 8.0.0
+ * lacks the `variable_flags` 8.0.11 has (taken off again by
+ * `commandTableEntry` before the patches that add it). The `incomplete` key specs of XREAD,
+ * XREADGROUP and GEORADIUS(BYMEMBER) that 7.2.16, 7.4.11, 8.2.9 and later
+ * patches add are applied on top of the table by `commandTableEntry`. Some
+ * presets are versioned below the patch captured for them and so answer as
+ * the captured patch, not as their nominal version: the redis-6.2 preset
+ * (6.2.14) reports 6.2.24's `denyoom` on SUBSCRIBE / PSUBSCRIBE, which 6.2.14
+ * does not have, and the valkey-8.0 / valkey-9.0 presets (8.0.0 / 9.0.0)
+ * report 8.0.11 / 9.0.6's metadata, apart from those `variable_flags`. Redis 8.0 is stored whole, every other
+ * version as its differences from the one it is derived from.
+ */
+const TABLES: readonly TableSource[] = [
+  valkey90,
+  valkey80,
+  redis80,
+  redis74,
+  redis72,
+  redis70,
+  redis62,
+]
+
+/**
+ * The real command-table entry `name` (`container|subcommand` for a
+ * subcommand) has on `profile`, or `undefined` when the table this server was
+ * captured against has none: a command added with `extraCommands` under a
+ * name real Redis does not have, or one the real server of that version does
+ * not have. Tips and key specs are left out
+ * on Redis 6.2, which has neither.
+ */
+export function commandTableEntry(
+  name: string,
+  profile: CompatibilityProfile,
+): CommandTableEntry | undefined {
+  // redis62's gate is satisfied by every profile, so a table is always found.
+  const source = TABLES.find(table => gateSatisfied(table.gate, profile))
+  const entry = withoutVariableFlags(
+    source ? resolved(source).get(name) : undefined,
+    name,
+    profile,
+  )
+  const notes = INCOMPLETE_KEY_SPEC_NOTES[name]
+  if (
+    !entry?.keySpecs ||
+    !notes ||
+    !profile.has('command.incomplete-stream-geo-key-specs')
+  ) {
+    return entry
+  }
+
+  let patched = incompleteEntries.get(entry)
+  if (!patched) {
+    patched = {
+      ...entry,
+      keySpecs: entry.keySpecs.map((spec, index) => {
+        const note = notes[index]
+        return note === undefined
+          ? spec
+          : { notes: note, ...spec, flags: [...spec.flags, 'incomplete'] }
+      }),
+    }
+    incompleteEntries.set(entry, patched)
+  }
+  return patched
+}
+
+const GEORADIUS_INCOMPLETE_NOTES = {
+  1: 'Incomplete because duplicate STORE options use last-wins; fall back to georadiusGetKeys',
+  2: 'Incomplete because duplicate STOREDIST options use last-wins; fall back to georadiusGetKeys',
+}
+
+/**
+ * The key specs a patch release marks `incomplete`, by command and spec
+ * index, with the `notes` it adds (feature
+ * `command.incomplete-stream-geo-key-specs`; redis@7.4.11:src/commands/
+ * xread.json, xreadgroup.json, georadius.json, georadiusbymember.json). The
+ * captured tables are of the releases before, so the change is applied on
+ * top of whichever table the profile reads.
+ */
+const INCOMPLETE_KEY_SPEC_NOTES: Readonly<
+  Record<string, Readonly<Record<number, string>>>
+> = {
+  xread: {
+    0: 'Incomplete because a stream key named STREAMS (or options before it) can shift the STREAMS keyword; fall back to xreadGetKeys',
+  },
+  xreadgroup: {
+    0: 'Incomplete because a consumer/group named STREAMS (or options before GROUP) can shift the STREAMS keyword; fall back to xreadGetKeys',
+  },
+  georadius: GEORADIUS_INCOMPLETE_NOTES,
+  georadiusbymember: GEORADIUS_INCOMPLETE_NOTES,
+}
+
+const incompleteEntries = new WeakMap<CommandTableEntry, CommandTableEntry>()
+
+/**
+ * Commands whose `variable_flags` key specs a Valkey patch release added
+ * (feature `command.georadius-variable-flags`; valkey@8.0.11:src/commands/
+ * georadius.json). The Valkey tables are captured from those patches, so
+ * the flag is taken off again for a profile before them.
+ */
+const VARIABLE_FLAGS_PATCHED = new Set(['georadius', 'georadiusbymember'])
+
+const fixedFlagEntries = new WeakMap<CommandTableEntry, CommandTableEntry>()
+
+function withoutVariableFlags(
+  entry: CommandTableEntry | undefined,
+  name: string,
+  profile: CompatibilityProfile,
+): CommandTableEntry | undefined {
+  if (
+    !entry?.keySpecs ||
+    !VARIABLE_FLAGS_PATCHED.has(name) ||
+    profile.has('command.georadius-variable-flags') ||
+    !entry.keySpecs.some(spec => spec.flags.includes('variable_flags'))
+  ) {
+    return entry
+  }
+
+  let patched = fixedFlagEntries.get(entry)
+  if (!patched) {
+    patched = {
+      ...entry,
+      keySpecs: entry.keySpecs.map(spec => ({
+        ...spec,
+        flags: spec.flags.filter(flag => flag !== 'variable_flags'),
+      })),
+    }
+    fixedFlagEntries.set(entry, patched)
+  }
+  return patched
+}

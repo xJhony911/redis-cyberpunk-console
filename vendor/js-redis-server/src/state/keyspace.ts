@@ -1,0 +1,62 @@
+// Data model for a database's keyspace. The storage and all of the behavior
+// live on `RedisDatabase` (src/state/database.ts); these are just the shapes it
+// stores. `KeyspaceMutationTracker` is internal to its private `update` — code
+// outside goes through `updateHash`/`updateList`/..., which hand the mutator a
+// `Tracked*` wrapper and do the marking for it.
+
+import type { RedisDataValue } from './data-types'
+
+export type ExpirationState =
+  | { kind: 'missing' }
+  | { kind: 'persistent' }
+  | { kind: 'expires'; expiresAt: number }
+
+export type KeyspaceEntry = {
+  key: Buffer
+  value: RedisDataValue
+  expiresAt?: number
+}
+
+export type SetOptions = {
+  expiresAt?: number
+  keepTtl?: boolean
+  /**
+   * Follow the write with an `expire` mutation for `expiresAt`, as the SET
+   * family does when it is given a TTL: real Redis' `setGenericCommand` runs
+   * `setKey`, then `setExpire`, and notifies `set` then `expire` (#380).
+   * Commands that only carry an existing TTL over to the key they write
+   * (RENAME, MOVE, COPY) leave it unset — Redis announces no `expire` there.
+   * Ignored without `expiresAt`, or with `keepTtl`.
+   */
+  expireEvent?: boolean
+  /**
+   * Whether the write announces the key as new (the `new` event, real
+   * Redis' `dbAdd`). By default only a key that did not exist is: SET over
+   * an existing key overwrites it (`dbOverwrite`). `true` for a destination
+   * real Redis deletes and adds again (`dbDelete` + `dbAdd`: COPY ...
+   * REPLACE, RENAME onto an existing key); `false` when the caller has
+   * announced it already ({@link RedisDatabase.announceNew}).
+   */
+  announceNew?: boolean
+}
+
+export type KeyspaceMutationTracker = {
+  // A WATCH-dirtying write: persists the value AND dirties a WATCH on the key.
+  markChanged(): void
+  // Persist the (possibly brand-new) value and announce it as a keyspace
+  // notification without, on its own, dirtying a WATCH. Used for stream
+  // consumer-group / last-id metadata changes, which real Redis notifies
+  // (`notifyKeyspaceEvent`) but does not treat as touching a WATCH on the
+  // stream key (`signalModifiedKey`). A brand-new key still dirties — coming
+  // into existence is itself a write — so `RedisDatabase.update` emits a
+  // notification-only `notify` event only for in-place changes to an
+  // already-existing key.
+  markCommitted(): void
+  // An in-place change to an already-existing key that real Redis propagates
+  // to its replicas without announcing it or dirtying a WATCH: stream
+  // pending / last-delivered-id / consumer changes made by XACK, XREADGROUP,
+  // XCLAIM and XAUTOCLAIM. `RedisDatabase.update` emits a replication-only
+  // `propagate` event for it (as it also does for a `markCommitted` change to
+  // an existing key).
+  markPropagated(): void
+}

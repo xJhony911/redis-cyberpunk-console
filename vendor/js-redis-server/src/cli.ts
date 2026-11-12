@@ -1,0 +1,245 @@
+import { createRedisServer } from './mock'
+import type { Logger } from './logger'
+import type { CompatibilitySpec } from './core/compatibility'
+
+type Mode = 'single' | 'cluster'
+
+export type CliOptions = {
+  mode: Mode
+  port: number
+  masters: number
+  slaves: number
+  basePort: number
+  compatibility?: CompatibilitySpec
+  help: boolean
+  debug: boolean
+}
+
+const defaultOptions: CliOptions = {
+  mode: 'single',
+  port: 6379,
+  masters: 3,
+  slaves: 0,
+  basePort: 30000,
+  help: false,
+  debug: false,
+}
+
+export function parseArgs(args: string[]): CliOptions {
+  const options: CliOptions = { ...defaultOptions }
+
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]
+
+    if (arg === '--help' || arg === '-h') {
+      options.help = true
+      continue
+    }
+
+    if (arg === '--debug' || arg === '-d') {
+      options.debug = true
+      continue
+    }
+
+    if (arg === '--cluster') {
+      options.mode = 'cluster'
+      continue
+    }
+
+    if (arg === '--single') {
+      options.mode = 'single'
+      continue
+    }
+
+    if (arg === '--mode') {
+      const value = args[++i]
+      if (value !== 'single' && value !== 'cluster') {
+        throw new Error(`Invalid mode "${value}"`)
+      }
+      options.mode = value
+      continue
+    }
+
+    if (arg === '--port') {
+      options.port = parseInteger(args[++i], '--port')
+      continue
+    }
+
+    if (arg === '--base-port') {
+      options.basePort = parseInteger(args[++i], '--base-port')
+      continue
+    }
+
+    if (arg === '--masters') {
+      options.masters = parseInteger(args[++i], '--masters')
+      continue
+    }
+
+    if (arg === '--slaves') {
+      options.slaves = parseInteger(args[++i], '--slaves')
+      continue
+    }
+
+    if (arg === '--compat') {
+      const value = args[++i]
+      if (!value) {
+        throw new Error('Missing value for --compat')
+      }
+      options.compatibility = value as CompatibilitySpec
+      continue
+    }
+
+    throw new Error(`Unknown argument "${arg}"`)
+  }
+
+  return options
+}
+
+function parseInteger(value: string | undefined, name: string): number {
+  if (!value) {
+    throw new Error(`Missing value for ${name}`)
+  }
+  const parsed = Number(value)
+  if (!Number.isInteger(parsed)) {
+    throw new Error(`Invalid value for ${name}: ${value}`)
+  }
+  return parsed
+}
+
+function validatePort(port: number, name: string): void {
+  if (!Number.isInteger(port) || port < 0 || port > 65535) {
+    throw new Error(`Invalid ${name} ${port}`)
+  }
+}
+
+function createLogger(debug = false): Logger {
+  return {
+    info: (msg, metadata) => {
+      if (metadata) {
+        console.log(msg, metadata)
+      } else {
+        console.log(msg)
+      }
+    },
+    error: (msg, metadata) => {
+      if (metadata) {
+        console.error(msg, metadata)
+      } else {
+        console.error(msg)
+      }
+    },
+    debug: (msg, metadata) => {
+      if (debug) {
+        if (metadata) {
+          console.debug(msg, metadata)
+        } else {
+          console.debug(msg)
+        }
+      }
+    },
+  }
+}
+
+function printHelp() {
+  console.log(`Usage: js-redis-server [options]
+       js-valkey-server [options]
+
+Modes:
+  --single               Run a single Redis server (default)
+  --cluster              Run a Redis cluster
+  --mode <single|cluster>
+
+Single server options:
+  --port <number>        Port to listen on (default 6379)
+
+Cluster options:
+  --masters <number>     Number of masters (default 3)
+  --slaves <number>      Number of replicas per master (default 0)
+  --base-port <number>   Starting port for cluster nodes (default 30000)
+
+General:
+  --compat <preset>       Compatibility profile (or REDIS_COMPAT env)
+  -d, --debug            Enable debug logging
+  -h, --help             Show help
+`)
+}
+
+async function runSingle(options: CliOptions, logger: Logger) {
+  validatePort(options.port, 'port')
+  logger.debug('Starting single server mode', { port: options.port })
+
+  const { server } = await createRedisServer({
+    port: options.port,
+    compatibility: resolveCliCompatibility(options),
+    logger,
+  })
+  logger.info(`Single Redis server listening at ${server.getAddress()}`)
+
+  const shutdown = async () => {
+    await server.close()
+  }
+
+  process.once('SIGINT', shutdown)
+  process.once('SIGTERM', shutdown)
+}
+
+async function runCluster(options: CliOptions, logger: Logger) {
+  validatePort(options.basePort, 'base-port')
+
+  logger.debug('Starting cluster mode', {
+    masters: options.masters,
+    slaves: options.slaves,
+    basePort: options.basePort,
+  })
+
+  const cluster = await createRedisServer({
+    cluster: { masters: options.masters, replicas: options.slaves },
+    basePort: options.basePort,
+    compatibility: resolveCliCompatibility(options),
+    logger,
+  })
+
+  const nodes = cluster.nodes.map(n => `${n.id} ${n.host}:${n.port}`).join(', ')
+  logger.info(`Cluster nodes: ${nodes}`)
+
+  const shutdown = async () => {
+    await cluster.close()
+  }
+
+  process.once('SIGINT', shutdown)
+  process.once('SIGTERM', shutdown)
+}
+
+function resolveCliCompatibility(
+  options: CliOptions,
+): CompatibilitySpec | undefined {
+  return (
+    options.compatibility ??
+    (process.env.REDIS_COMPAT as CompatibilitySpec | undefined)
+  )
+}
+
+export async function main(argv = process.argv.slice(2)) {
+  const options = parseArgs(argv)
+  if (options.help) {
+    printHelp()
+    return
+  }
+
+  const logger = createLogger(options.debug)
+
+  if (options.mode === 'cluster') {
+    await runCluster(options, logger)
+  } else {
+    await runSingle(options, logger)
+  }
+}
+
+// Run when executed directly as CLI. Node resolves bin symlinks to realpath,
+// so require.main === module works for `npm link` / global installs too.
+if (require.main === module) {
+  main().catch(err => {
+    console.error(err)
+    process.exitCode = 1
+  })
+}

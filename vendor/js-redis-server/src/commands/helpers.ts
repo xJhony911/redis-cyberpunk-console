@@ -1,0 +1,250 @@
+import { RedisValue } from '../core/redis-value'
+import { RedisResult } from '../core/redis-result'
+import { isIntegerToken } from '../core/command-schema'
+import {
+  formatRedisDouble,
+  type DoubleFormatProfile,
+} from '../core/double-format'
+import { WrongTypeRedisError, errors } from '../core/redis-error'
+import type { CompatibilityProfile } from '../core/compatibility'
+import type { RedisDataTypeName, RedisDatabase } from '../state'
+
+export function ok(): RedisResult {
+  return RedisResult.ok()
+}
+
+export function bulk(value: Buffer | null): RedisResult {
+  return RedisResult.create(RedisValue.bulkString(value))
+}
+
+export function integer(value: number | bigint): RedisResult {
+  return RedisResult.create(RedisValue.integer(value))
+}
+
+// A score as text, for replies that carry it as a plain bulk string (ZSCAN).
+// Same profile-aware spelling as a `double` reply (#451), `-0` included.
+export function scoreBuffer(
+  score: number,
+  profile: DoubleFormatProfile,
+): Buffer {
+  return Buffer.from(formatRedisDouble(score, profile))
+}
+
+// A sorted-set score reply. Protocol-aware: a bulk string on RESP2 (matching
+// scoreBuffer) and a `,double` on RESP3 — the shape real Redis uses for
+// ZSCORE/ZINCRBY/WITHSCORES scores. A stored `-0` is spelled `-0`, as Redis
+// does; whether a sorted set keeps one is up to its encoding
+// (state/zset-encoding.ts, #512).
+export function scoreValue(score: number): RedisValue {
+  return RedisValue.double(score)
+}
+
+// member/score pairs for WITHSCORES-style replies: flat [m, s, ...] on RESP2,
+// nested [[m, s], ...] on RESP3, with scores as RESP3 doubles.
+export function scorePairs(
+  members: readonly { member: Buffer; score: number }[],
+): RedisValue {
+  return RedisValue.flatPairs(
+    members.map(entry => [
+      RedisValue.bulkString(entry.member),
+      scoreValue(entry.score),
+    ]),
+  )
+}
+
+export function simpleString(value: string): RedisResult {
+  return RedisResult.create(RedisValue.simpleString(value))
+}
+
+export function array(items: RedisValue[]): RedisResult {
+  return RedisResult.create(RedisValue.array(items))
+}
+
+/** A RESP3 set (`~`); a plain array (`*`) on RESP2. */
+export function setReply(items: RedisValue[]): RedisResult {
+  return RedisResult.create(RedisValue.set(items))
+}
+
+/**
+ * A container's HELP reply, as real Redis' `addReplyHelp` builds it: the
+ * container's own lines followed by the `HELP` entry every container appends,
+ * all as status lines (`+...`). The entry reads `Prints this help.` through
+ * 7.0 and `Print this help.` from Redis 7.2 / Valkey 7.2.
+ */
+export function helpReply(
+  lines: readonly string[],
+  profile: CompatibilityProfile,
+): RedisResult {
+  const footer = profile.has('reply.help-print-wording')
+    ? '    Print this help.'
+    : '    Prints this help.'
+  return array(
+    [...lines, 'HELP', footer].map(line => RedisValue.simpleString(line)),
+  )
+}
+
+/**
+ * Delete a key because a command gave it a deadline already past (SET,
+ * GETEX EXAT / PXAT, the EXPIRE family). Published as `del`, or as
+ * `expired` (class `x`) from Valkey 8.1 (#527).
+ */
+export function deleteForPastDeadline(
+  db: RedisDatabase,
+  key: Buffer,
+  profile: CompatibilityProfile,
+): boolean {
+  return profile.has('notify.past-deadline-expired-event')
+    ? db.expireNow(key)
+    : db.delete(key)
+}
+
+export function ensureStringOrMissing(
+  db: RedisDatabase,
+  key: Buffer,
+): Buffer | null {
+  const type = db.getType(key)
+  if (type === null) {
+    return null
+  }
+
+  if (type !== 'string') {
+    throw new WrongTypeRedisError()
+  }
+
+  return db.getString(key)
+}
+
+export function typeName(type: RedisDataTypeName | null): string {
+  return type ?? 'none'
+}
+
+// Key-level TTL (TTL): Redis rounds remaining time to the nearest second
+// ((ms+500)/1000), not ceil/floor — matches EXPIRETIME and real TTL behavior.
+export function keyTtlSeconds(expiresAt: number, now = Date.now()): number {
+  return Math.max(0, Math.round((expiresAt - now) / 1000))
+}
+
+// Hash-field TTL (HTTL): Redis rounds remaining time *up* to the next second
+// ((ms+999)/1000), so any sub-second remainder reports 1, not 0 (#432).
+export function hashFieldTtlSeconds(
+  expiresAt: number,
+  now = Date.now(),
+): number {
+  return Math.max(0, Math.ceil((expiresAt - now) / 1000))
+}
+
+export function ttlMilliseconds(expiresAt: number, now = Date.now()): number {
+  return Math.max(0, expiresAt - now)
+}
+
+export function parseIntegerToken(token: Buffer): number {
+  const raw = token.toString()
+  if (!isIntegerToken(raw)) {
+    throw errors.expectedInteger()
+  }
+
+  const value = Number(raw)
+  if (!Number.isSafeInteger(value)) {
+    throw errors.expectedInteger()
+  }
+
+  return value
+}
+
+export const INT64_MAX = 9223372036854775807n
+export const INT64_MIN = -9223372036854775808n
+
+// Parse a stored token as a signed 64-bit integer, matching Redis' int64
+// semantics for INCR/DECR. Unlike parseIntegerToken this keeps full precision
+// above 2^53 and rejects values outside the int64 range.
+export function parseInt64Token(token: Buffer): bigint {
+  const raw = token.toString()
+  if (!isIntegerToken(raw)) {
+    throw errors.expectedInteger()
+  }
+
+  const value = BigInt(raw)
+  if (value < INT64_MIN || value > INT64_MAX) {
+    throw errors.expectedInteger()
+  }
+
+  return value
+}
+
+export type ExpireUnit = 'EX' | 'PX' | 'EXAT' | 'PXAT'
+
+/**
+ * The EX / PX / EXAT / PXAT time of SET, SETEX, PSETEX and GETEX as an
+ * absolute deadline in ms, checked as `getExpireMillisecondsOrReply`
+ * (t_string.c) does (#592): any int64, but `invalid expire time` when it is
+ * not positive, when seconds overflow on the way to ms, or when the deadline
+ * passes LLONG_MAX. A deadline past the safe-integer range is kept as the
+ * nearest double.
+ */
+export function stringExpireDeadlineMs(
+  token: Buffer,
+  unit: ExpireUnit,
+  commandName: string,
+  profile: CompatibilityProfile,
+  now = Date.now(),
+): number {
+  const value = parseInt64Token(token)
+  const seconds = unit === 'EX' || unit === 'EXAT'
+  if (value <= 0n || (seconds && value > INT64_MAX / 1000n)) {
+    throw errors.invalidExpireTime(commandName, profile)
+  }
+
+  let ms = seconds ? value * 1000n : value
+  if (unit === 'EX' || unit === 'PX') ms += BigInt(now)
+  if (ms > INT64_MAX) {
+    throw errors.invalidExpireTime(commandName, profile)
+  }
+  return Number(ms)
+}
+
+/**
+ * The time of EXPIRE / PEXPIRE / EXPIREAT / PEXPIREAT as an absolute deadline
+ * in ms, checked as `expireGenericCommand` (expire.c) does (#592): any int64,
+ * negative included, but `invalid expire time` when seconds overflow on the
+ * way to ms or adding `basetime` (now, or 0 for the *AT forms) would.
+ */
+export function keyExpireDeadlineMs(
+  token: Buffer,
+  seconds: boolean,
+  basetime: number,
+  commandName: string,
+  profile: CompatibilityProfile,
+): number {
+  let when = parseInt64Token(token)
+  if (seconds) {
+    if (when > INT64_MAX / 1000n || when < INT64_MIN / 1000n) {
+      throw errors.invalidExpireTime(commandName, profile)
+    }
+    when *= 1000n
+  }
+
+  const base = BigInt(basetime)
+  if (when > INT64_MAX - base) {
+    throw errors.invalidExpireTime(commandName, profile)
+  }
+  return Number(when + base)
+}
+
+export {
+  expectSubcommandArgCount,
+  subcommandArityError,
+  subcommandSyntaxError,
+  unknownSubcommandError,
+} from '../core/subcommand-errors'
+
+export function requireNextOptionValue(
+  args: readonly Buffer[],
+  index: number,
+): Buffer {
+  const value = args[index]
+  if (!value) {
+    throw errors.syntax()
+  }
+
+  return value
+}

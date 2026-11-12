@@ -1,0 +1,4588 @@
+{
+  "SET": {
+    "documentation": "detailed",
+    "options": [
+      "NX escribe solo si la clave no existe; XX solo si existe. Son mutuamente excluyentes.",
+      "GET devuelve el String anterior o nulo. Si el valor anterior es de otro tipo, devuelve WRONGTYPE y no lo sustituye.",
+      "EX segundos, PX milisegundos, EXAT instante Unix en segundos, PXAT instante Unix en milisegundos o KEEPTTL. Elige una sola alternativa de caducidad. EX/PX deben ser positivos.",
+      "Sin GET: OK si escribe; nulo si falla NX/XX. Con GET se devuelve el valor anterior incluso si NX impide escribir (desde Redis 7.0).",
+      "GET y EXAT/PXAT desde 6.2; KEEPTTL desde 6.0; NX+GET desde 7.0."
+    ],
+    "response": "OK, nulo o el valor String anterior según las opciones.",
+    "ttl": "Por defecto elimina el TTL anterior al sobrescribir. KEEPTTL conserva su fecha absoluta; EX/PX renuevan desde ahora. Una condición fallida conserva datos y TTL.",
+    "examples": [
+      {
+        "title": "Guardar y recuperar",
+        "setup": [
+          "DEL guia:saludo"
+        ],
+        "commands": [
+          "SET guia:saludo \"Hola Redis\"",
+          "GET guia:saludo"
+        ],
+        "expected": "OK; \"Hola Redis\"",
+        "explanation": "Las comillas conservan los espacios dentro de un único argumento."
+      },
+      {
+        "title": "Crear una caché solo una vez",
+        "setup": [
+          "DEL guia:cache"
+        ],
+        "commands": [
+          "SET guia:cache \"v1\" EX 60 NX",
+          "SET guia:cache \"v2\" NX GET",
+          "GET guia:cache"
+        ],
+        "expected": "OK; \"v1\"; \"v1\"",
+        "explanation": "La segunda escritura no ocurre porque la clave ya existe; GET permite conocer el valor previo."
+      }
+    ],
+    "notes": [
+      "SET puede reemplazar cualquier tipo si no se solicita GET. Los comandos que modifican el contenido, como INCR, conservan normalmente el TTL."
+    ],
+    "errors": [
+      "ERR wrong number of arguments: revisa la sintaxis.",
+      "WRONGTYPE: una operación sobre String recibió otra estructura.",
+      "ERR syntax error: NX con XX o varias alternativas de caducidad.",
+      "ERR invalid expire time: caducidad relativa no positiva o fuera de rango."
+    ],
+    "lab": "strings"
+  },
+  "GET": {
+    "documentation": "detailed",
+    "options": [],
+    "response": "String almacenado o nulo si no existe.",
+    "ttl": "No modifica el valor ni su caducidad. Una clave caducada se trata como inexistente.",
+    "examples": [
+      {
+        "title": "Leer un valor",
+        "setup": [
+          "SET guia:nombre \"Ana María\""
+        ],
+        "commands": [
+          "GET guia:nombre"
+        ],
+        "expected": "\"Ana María\"",
+        "explanation": "GET recupera exactamente el valor guardado."
+      },
+      {
+        "title": "Clave ausente",
+        "setup": [
+          "DEL guia:ausente"
+        ],
+        "commands": [
+          "GET guia:ausente"
+        ],
+        "expected": "(nil)",
+        "explanation": "Nulo indica ausencia, no una cadena vacía."
+      }
+    ],
+    "notes": [],
+    "errors": [
+      "ERR wrong number of arguments: revisa la sintaxis.",
+      "WRONGTYPE: una operación sobre String recibió otra estructura."
+    ],
+    "lab": "strings"
+  },
+  "APPEND": {
+    "documentation": "detailed",
+    "options": [],
+    "response": "Entero: longitud total del String en bytes después de añadir.",
+    "ttl": "Conserva la fecha de caducidad existente. Una clave nueva no caduca hasta que se configure EXPIRE o una opción equivalente.",
+    "examples": [
+      {
+        "title": "Construir un texto",
+        "setup": [
+          "SET guia:mensaje \"Hola\""
+        ],
+        "commands": [
+          "APPEND guia:mensaje \" Redis\"",
+          "GET guia:mensaje"
+        ],
+        "expected": "10; \"Hola Redis\"",
+        "explanation": "El espacio inicial del segundo argumento también ocupa un byte."
+      },
+      {
+        "title": "Crear si no existe",
+        "setup": [
+          "DEL guia:mensaje"
+        ],
+        "commands": [
+          "APPEND guia:mensaje \"uno\""
+        ],
+        "expected": "3",
+        "explanation": "No hace falta crear antes un String vacío."
+      }
+    ],
+    "notes": [
+      "Coste O(1) amortizado por ampliación; copiar un argumento grande implica trabajo proporcional a sus bytes."
+    ],
+    "errors": [
+      "ERR wrong number of arguments: revisa la sintaxis.",
+      "WRONGTYPE: una operación sobre String recibió otra estructura."
+    ],
+    "lab": "strings"
+  },
+  "STRLEN": {
+    "documentation": "detailed",
+    "options": [],
+    "response": "Entero: longitud en bytes; cero si la clave no existe.",
+    "ttl": "No modifica el valor ni su caducidad. Una clave caducada se trata como inexistente.",
+    "examples": [
+      {
+        "title": "Medir texto ASCII",
+        "setup": [
+          "SET guia:texto \"Redis\""
+        ],
+        "commands": [
+          "STRLEN guia:texto"
+        ],
+        "expected": "5",
+        "explanation": "Cada carácter ASCII ocupa un byte."
+      },
+      {
+        "title": "Distinguir bytes y caracteres",
+        "setup": [
+          "SET guia:texto \"café\""
+        ],
+        "commands": [
+          "STRLEN guia:texto"
+        ],
+        "expected": "5",
+        "explanation": "é ocupa dos bytes en UTF-8: la longitud no es cuatro."
+      }
+    ],
+    "notes": [],
+    "errors": [
+      "ERR wrong number of arguments: revisa la sintaxis.",
+      "WRONGTYPE: una operación sobre String recibió otra estructura."
+    ],
+    "lab": "strings"
+  },
+  "GETRANGE": {
+    "documentation": "detailed",
+    "options": [
+      "start y end son índices de bytes inclusivos, empezando por cero.",
+      "Un índice negativo cuenta desde el final: -1 es el último byte. Los límites se recortan al tamaño disponible."
+    ],
+    "response": "String con los bytes del intervalo; cadena vacía si no hay intersección o la clave no existe.",
+    "ttl": "No modifica el valor ni su caducidad. Una clave caducada se trata como inexistente.",
+    "examples": [
+      {
+        "title": "Extraer un prefijo",
+        "setup": [
+          "SET guia:texto \"Hola Redis\""
+        ],
+        "commands": [
+          "GETRANGE guia:texto 0 3"
+        ],
+        "expected": "\"Hola\"",
+        "explanation": "El byte del índice 3 se incluye."
+      },
+      {
+        "title": "Leer desde el final",
+        "setup": [
+          "SET guia:texto \"Hola Redis\""
+        ],
+        "commands": [
+          "GETRANGE guia:texto -5 -1"
+        ],
+        "expected": "\"Redis\"",
+        "explanation": "Los índices negativos evitan calcular la longitud antes."
+      }
+    ],
+    "notes": [
+      "Los límites se aplican a bytes; cortar en mitad de un carácter UTF-8 puede producir texto inválido."
+    ],
+    "errors": [
+      "ERR wrong number of arguments: revisa la sintaxis.",
+      "WRONGTYPE: una operación sobre String recibió otra estructura."
+    ],
+    "lab": "strings"
+  },
+  "SUBSTR": {
+    "documentation": "detailed",
+    "options": [
+      "start y end son índices de bytes inclusivos, empezando por cero.",
+      "Un índice negativo cuenta desde el final: -1 es el último byte. Los límites se recortan al tamaño disponible."
+    ],
+    "response": "String con los bytes del intervalo; cadena vacía si no hay intersección o la clave no existe.",
+    "ttl": "No modifica el valor ni su caducidad. Una clave caducada se trata como inexistente.",
+    "examples": [
+      {
+        "title": "Extraer un prefijo",
+        "setup": [
+          "SET guia:texto \"Hola Redis\""
+        ],
+        "commands": [
+          "SUBSTR guia:texto 0 3"
+        ],
+        "expected": "\"Hola\"",
+        "explanation": "El byte del índice 3 se incluye."
+      },
+      {
+        "title": "Leer desde el final",
+        "setup": [
+          "SET guia:texto \"Hola Redis\""
+        ],
+        "commands": [
+          "SUBSTR guia:texto -5 -1"
+        ],
+        "expected": "\"Redis\"",
+        "explanation": "Los índices negativos evitan calcular la longitud antes."
+      }
+    ],
+    "notes": [
+      "Los límites se aplican a bytes; cortar en mitad de un carácter UTF-8 puede producir texto inválido."
+    ],
+    "errors": [
+      "ERR wrong number of arguments: revisa la sintaxis.",
+      "WRONGTYPE: una operación sobre String recibió otra estructura."
+    ],
+    "lab": "strings",
+    "replacement": "Utiliza GETRANGE."
+  },
+  "SETRANGE": {
+    "documentation": "detailed",
+    "options": [
+      "offset es un desplazamiento no negativo de bytes.",
+      "Si hay un hueco entre el valor y offset, Redis lo rellena con bytes cero. No elimina el sufijo posterior a lo escrito."
+    ],
+    "response": "Entero: nueva longitud en bytes.",
+    "ttl": "Conserva la fecha de caducidad existente. Una clave nueva no caduca hasta que se configure EXPIRE o una opción equivalente.",
+    "examples": [
+      {
+        "title": "Sustituir un fragmento",
+        "setup": [
+          "SET guia:texto \"Hola mundo\""
+        ],
+        "commands": [
+          "SETRANGE guia:texto 5 \"Redis\"",
+          "GET guia:texto"
+        ],
+        "expected": "10; \"Hola Redis\"",
+        "explanation": "Solo se sobrescribe desde el byte cinco."
+      },
+      {
+        "title": "Crear un hueco",
+        "setup": [
+          "DEL guia:binario"
+        ],
+        "commands": [
+          "SETRANGE guia:binario 3 \"A\"",
+          "STRLEN guia:binario"
+        ],
+        "expected": "4; 4",
+        "explanation": "El resultado contiene tres bytes cero y A."
+      }
+    ],
+    "notes": [
+      "Grandes desplazamientos reservan memoria y pueden bloquear Redis; el laboratorio impone límites adicionales."
+    ],
+    "errors": [
+      "ERR wrong number of arguments: revisa la sintaxis.",
+      "WRONGTYPE: una operación sobre String recibió otra estructura.",
+      "ERR offset is out of range: el desplazamiento debe estar dentro del rango admitido."
+    ],
+    "lab": "strings"
+  },
+  "INCR": {
+    "documentation": "detailed",
+    "options": [],
+    "response": "Entero: valor del contador después de la operación.",
+    "ttl": "Conserva la fecha de caducidad existente. Una clave nueva no caduca hasta que se configure EXPIRE o una opción equivalente.",
+    "examples": [
+      {
+        "title": "Crear un contador",
+        "setup": [
+          "DEL guia:visitas"
+        ],
+        "commands": [
+          "INCR guia:visitas"
+        ],
+        "expected": "1",
+        "explanation": "Una clave ausente se interpreta inicialmente como cero."
+      },
+      {
+        "title": "Actualizar un contador existente",
+        "setup": [
+          "SET guia:visitas 41"
+        ],
+        "commands": [
+          "INCR guia:visitas"
+        ],
+        "expected": "42",
+        "explanation": "La actualización del valor es atómica."
+      }
+    ],
+    "notes": [
+      "El intervalo entero válido es −9223372036854775808 a 9223372036854775807. Un desbordamiento devuelve error sin modificar el contador.",
+      "No hagas GET + cálculo + SET para contadores concurrentes: el incremento debe ser una sola operación atómica."
+    ],
+    "errors": [
+      "ERR wrong number of arguments: revisa la sintaxis.",
+      "WRONGTYPE: una operación sobre String recibió otra estructura.",
+      "ERR value is not an integer or out of range: el valor o incremento no es un entero de 64 bits.",
+      "ERR increment or decrement would overflow: se excede el rango de 64 bits."
+    ],
+    "lab": "counter"
+  },
+  "DECR": {
+    "documentation": "detailed",
+    "options": [],
+    "response": "Entero: valor del contador después de la operación.",
+    "ttl": "Conserva la fecha de caducidad existente. Una clave nueva no caduca hasta que se configure EXPIRE o una opción equivalente.",
+    "examples": [
+      {
+        "title": "Crear un contador",
+        "setup": [
+          "DEL guia:visitas"
+        ],
+        "commands": [
+          "DECR guia:visitas"
+        ],
+        "expected": "-1",
+        "explanation": "Una clave ausente se interpreta inicialmente como cero."
+      },
+      {
+        "title": "Actualizar un contador existente",
+        "setup": [
+          "SET guia:visitas 41"
+        ],
+        "commands": [
+          "DECR guia:visitas"
+        ],
+        "expected": "40",
+        "explanation": "La actualización del valor es atómica."
+      }
+    ],
+    "notes": [
+      "El intervalo entero válido es −9223372036854775808 a 9223372036854775807. Un desbordamiento devuelve error sin modificar el contador.",
+      "No hagas GET + cálculo + SET para contadores concurrentes: el incremento debe ser una sola operación atómica."
+    ],
+    "errors": [
+      "ERR wrong number of arguments: revisa la sintaxis.",
+      "WRONGTYPE: una operación sobre String recibió otra estructura.",
+      "ERR value is not an integer or out of range: el valor o incremento no es un entero de 64 bits.",
+      "ERR increment or decrement would overflow: se excede el rango de 64 bits."
+    ],
+    "lab": "counter"
+  },
+  "INCRBY": {
+    "documentation": "detailed",
+    "options": [
+      "La cantidad es un entero con signo; un valor negativo invierte el sentido de la operación."
+    ],
+    "response": "Entero: valor del contador después de la operación.",
+    "ttl": "Conserva la fecha de caducidad existente. Una clave nueva no caduca hasta que se configure EXPIRE o una opción equivalente.",
+    "examples": [
+      {
+        "title": "Crear un contador",
+        "setup": [
+          "DEL guia:visitas"
+        ],
+        "commands": [
+          "INCRBY guia:visitas 5"
+        ],
+        "expected": "5",
+        "explanation": "Una clave ausente se interpreta inicialmente como cero."
+      },
+      {
+        "title": "Actualizar un contador existente",
+        "setup": [
+          "SET guia:visitas 41"
+        ],
+        "commands": [
+          "INCRBY guia:visitas -3"
+        ],
+        "expected": "38",
+        "explanation": "La actualización del valor es atómica."
+      }
+    ],
+    "notes": [
+      "El intervalo entero válido es −9223372036854775808 a 9223372036854775807. Un desbordamiento devuelve error sin modificar el contador.",
+      "No hagas GET + cálculo + SET para contadores concurrentes: el incremento debe ser una sola operación atómica."
+    ],
+    "errors": [
+      "ERR wrong number of arguments: revisa la sintaxis.",
+      "WRONGTYPE: una operación sobre String recibió otra estructura.",
+      "ERR value is not an integer or out of range: el valor o incremento no es un entero de 64 bits.",
+      "ERR increment or decrement would overflow: se excede el rango de 64 bits."
+    ],
+    "lab": "counter"
+  },
+  "DECRBY": {
+    "documentation": "detailed",
+    "options": [
+      "La cantidad es un entero con signo; un valor negativo invierte el sentido de la operación."
+    ],
+    "response": "Entero: valor del contador después de la operación.",
+    "ttl": "Conserva la fecha de caducidad existente. Una clave nueva no caduca hasta que se configure EXPIRE o una opción equivalente.",
+    "examples": [
+      {
+        "title": "Crear un contador",
+        "setup": [
+          "DEL guia:visitas"
+        ],
+        "commands": [
+          "DECRBY guia:visitas 5"
+        ],
+        "expected": "-5",
+        "explanation": "Una clave ausente se interpreta inicialmente como cero."
+      },
+      {
+        "title": "Actualizar un contador existente",
+        "setup": [
+          "SET guia:visitas 41"
+        ],
+        "commands": [
+          "DECRBY guia:visitas -3"
+        ],
+        "expected": "44",
+        "explanation": "La actualización del valor es atómica."
+      }
+    ],
+    "notes": [
+      "El intervalo entero válido es −9223372036854775808 a 9223372036854775807. Un desbordamiento devuelve error sin modificar el contador.",
+      "No hagas GET + cálculo + SET para contadores concurrentes: el incremento debe ser una sola operación atómica."
+    ],
+    "errors": [
+      "ERR wrong number of arguments: revisa la sintaxis.",
+      "WRONGTYPE: una operación sobre String recibió otra estructura.",
+      "ERR value is not an integer or out of range: el valor o incremento no es un entero de 64 bits.",
+      "ERR increment or decrement would overflow: se excede el rango de 64 bits."
+    ],
+    "lab": "counter"
+  },
+  "INCRBYFLOAT": {
+    "documentation": "detailed",
+    "options": [
+      "increment admite signo y notación exponencial.",
+      "El valor y el resultado deben ser números finitos; NaN e infinito no se aceptan."
+    ],
+    "response": "String: nuevo valor decimal con representación normalizada.",
+    "ttl": "Conserva la fecha de caducidad existente. Una clave nueva no caduca hasta que se configure EXPIRE o una opción equivalente.",
+    "examples": [
+      {
+        "title": "Sumar decimales",
+        "setup": [
+          "SET guia:medida 10.5"
+        ],
+        "commands": [
+          "INCRBYFLOAT guia:medida 0.2"
+        ],
+        "expected": "\"10.7\"",
+        "explanation": "Redis mantiene el resultado como un String numérico."
+      },
+      {
+        "title": "Restar con exponente",
+        "setup": [
+          "SET guia:medida 10.5"
+        ],
+        "commands": [
+          "INCRBYFLOAT guia:medida -2e0"
+        ],
+        "expected": "\"8.5\"",
+        "explanation": "Un incremento negativo sustituye a un comando DECRBYFLOAT, que no existe."
+      }
+    ],
+    "notes": [
+      "No uses números de coma flotante para importes que requieren exactitud decimal; almacena unidades mínimas enteras."
+    ],
+    "errors": [
+      "ERR wrong number of arguments: revisa la sintaxis.",
+      "WRONGTYPE: una operación sobre String recibió otra estructura.",
+      "ERR value is not a valid float: texto no numérico.",
+      "ERR increment would produce NaN or Infinity: resultado no finito."
+    ],
+    "lab": "strings"
+  },
+  "MGET": {
+    "documentation": "detailed",
+    "options": [
+      "Recibe una o varias claves. La respuesta conserva orden y repeticiones."
+    ],
+    "response": "Lista de Strings o nulos. Una clave de otro tipo se representa como nulo, sin WRONGTYPE.",
+    "ttl": "No modifica el valor ni su caducidad. Una clave caducada se trata como inexistente.",
+    "examples": [
+      {
+        "title": "Leer varios valores",
+        "setup": [
+          "MSET guia:a uno guia:b dos"
+        ],
+        "commands": [
+          "MGET guia:b guia:a guia:ausente"
+        ],
+        "expected": "[\"dos\", \"uno\", null]",
+        "explanation": "La posición de cada respuesta corresponde al argumento."
+      },
+      {
+        "title": "Otro tipo de dato",
+        "setup": [
+          "DEL guia:h",
+          "HSET guia:h campo valor"
+        ],
+        "commands": [
+          "MGET guia:h guia:h"
+        ],
+        "expected": "[null, null]",
+        "explanation": "MGET trata las claves que no son Strings como nulas."
+      }
+    ],
+    "notes": [
+      "Reduce viajes de red frente a varios GET. En Cluster las claves deben compartir hash slot."
+    ],
+    "errors": [
+      "ERR wrong number of arguments: revisa la sintaxis.",
+      "WRONGTYPE: una operación sobre String recibió otra estructura."
+    ],
+    "lab": "strings"
+  },
+  "MSET": {
+    "documentation": "detailed",
+    "options": [
+      "Recibe uno o varios pares key value; la cantidad de argumentos debe ser par.",
+      "No admite EX/PX ni condiciones NX/XX. Para condición conjunta existe MSETNX."
+    ],
+    "response": "Respuesta simple OK.",
+    "ttl": "Sobrescribe los valores y elimina el TTL de cada clave escrita.",
+    "examples": [
+      {
+        "title": "Guardar dos claves",
+        "setup": [
+          "DEL guia:a guia:b"
+        ],
+        "commands": [
+          "MSET guia:a uno guia:b dos",
+          "MGET guia:a guia:b"
+        ],
+        "expected": "OK; [\"uno\", \"dos\"]",
+        "explanation": "Los dos pares se actualizan como una única operación."
+      },
+      {
+        "title": "Sobrescribir una caché",
+        "setup": [
+          "SET guia:a previo EX 60"
+        ],
+        "commands": [
+          "MSET guia:a nuevo guia:b segundo",
+          "TTL guia:a"
+        ],
+        "expected": "OK; -1",
+        "explanation": "La escritura mediante MSET elimina la caducidad previa."
+      }
+    ],
+    "notes": [
+      "En Cluster todas las claves deben compartir hash slot."
+    ],
+    "errors": [
+      "ERR wrong number of arguments: revisa la sintaxis.",
+      "WRONGTYPE: una operación sobre String recibió otra estructura.",
+      "ERR wrong number of arguments: falta un valor en un par."
+    ],
+    "lab": "strings"
+  },
+  "MSETNX": {
+    "documentation": "detailed",
+    "options": [
+      "Recibe pares key value. Solo escribe si ninguna de sus claves existe.",
+      "La condición se evalúa sobre el conjunto completo: no hay escritura parcial."
+    ],
+    "response": "Entero: 1 si escribió todos los pares; 0 si alguna clave ya existía.",
+    "ttl": "Las claves creadas no caducan. Si falla la condición no cambia ninguna clave ni TTL.",
+    "examples": [
+      {
+        "title": "Crear un grupo completo",
+        "setup": [
+          "DEL guia:a guia:b"
+        ],
+        "commands": [
+          "MSETNX guia:a uno guia:b dos"
+        ],
+        "expected": "1",
+        "explanation": "Ambas claves estaban ausentes."
+      },
+      {
+        "title": "Evitar una escritura parcial",
+        "setup": [
+          "SET guia:a existente",
+          "DEL guia:b"
+        ],
+        "commands": [
+          "MSETNX guia:a nuevo guia:b dos",
+          "GET guia:b"
+        ],
+        "expected": "0; (nil)",
+        "explanation": "Al existir guia:a, tampoco se crea guia:b."
+      }
+    ],
+    "notes": [
+      "En Cluster las claves deben estar en el mismo hash slot."
+    ],
+    "errors": [
+      "ERR wrong number of arguments: revisa la sintaxis.",
+      "WRONGTYPE: una operación sobre String recibió otra estructura."
+    ],
+    "lab": "strings"
+  },
+  "GETDEL": {
+    "documentation": "detailed",
+    "options": [],
+    "response": "String anterior o nulo si la clave no existe.",
+    "ttl": "Elimina la clave y su caducidad después de leer el String.",
+    "examples": [
+      {
+        "title": "Consumir un valor",
+        "setup": [
+          "SET guia:ticket \"T-123\" EX 60"
+        ],
+        "commands": [
+          "GETDEL guia:ticket",
+          "GET guia:ticket"
+        ],
+        "expected": "\"T-123\"; (nil)",
+        "explanation": "Lectura y eliminación ocurren atómicamente."
+      },
+      {
+        "title": "Reintentar el consumo",
+        "setup": [
+          "DEL guia:ticket"
+        ],
+        "commands": [
+          "GETDEL guia:ticket"
+        ],
+        "expected": "(nil)",
+        "explanation": "Una segunda lectura no puede recuperar un valor ya consumido."
+      }
+    ],
+    "notes": [],
+    "errors": [
+      "ERR wrong number of arguments: revisa la sintaxis.",
+      "WRONGTYPE: una operación sobre String recibió otra estructura."
+    ],
+    "lab": "strings"
+  },
+  "GETEX": {
+    "documentation": "detailed",
+    "options": [
+      "EX segundos, PX milisegundos, EXAT instante Unix en segundos o PXAT instante Unix en milisegundos: elige una alternativa.",
+      "PERSIST elimina la caducidad. Sin opciones, mantiene el TTL.",
+      "No admite NX, XX ni KEEPTTL. Aunque se parezca a GET, es un comando de escritura."
+    ],
+    "response": "String actual o nulo si no existe.",
+    "ttl": "Lee sin cambiar el valor y aplica la caducidad solicitada. PERSIST hace persistente la clave.",
+    "examples": [
+      {
+        "title": "Renovar una sesión",
+        "setup": [
+          "SET guia:sesion usuario EX 10"
+        ],
+        "commands": [
+          "GETEX guia:sesion EX 60",
+          "TTL guia:sesion"
+        ],
+        "expected": "\"usuario\"; entre 59 y 60 inmediatamente",
+        "explanation": "La renovación se hace en la misma operación que la lectura."
+      },
+      {
+        "title": "Retirar la caducidad",
+        "setup": [
+          "SET guia:sesion usuario EX 60"
+        ],
+        "commands": [
+          "GETEX guia:sesion PERSIST",
+          "TTL guia:sesion"
+        ],
+        "expected": "\"usuario\"; -1",
+        "explanation": "El valor se conserva pero ya no caduca."
+      }
+    ],
+    "notes": [],
+    "errors": [
+      "ERR wrong number of arguments: revisa la sintaxis.",
+      "WRONGTYPE: una operación sobre String recibió otra estructura.",
+      "ERR syntax error: no combines varias opciones de caducidad."
+    ],
+    "lab": "session"
+  },
+  "SETEX": {
+    "documentation": "detailed",
+    "options": [
+      "SETEX key seconds value. La caducidad debe ser un entero positivo."
+    ],
+    "response": "Respuesta simple OK.",
+    "ttl": "Sustituye el valor y establece una nueva caducidad relativa.",
+    "examples": [
+      {
+        "title": "Guardar una caché",
+        "setup": [
+          "DEL guia:cache"
+        ],
+        "commands": [
+          "SETEX guia:cache 60 \"resultado\"",
+          "GET guia:cache"
+        ],
+        "expected": "OK; \"resultado\"",
+        "explanation": "Valor y caducidad se establecen juntos."
+      },
+      {
+        "title": "Alternativa moderna",
+        "setup": [
+          "DEL guia:cache"
+        ],
+        "commands": [
+          "SET guia:cache \"resultado\" EX 60",
+          "TTL guia:cache"
+        ],
+        "expected": "OK; entre 59 y 60 inmediatamente",
+        "explanation": "SET permite combinar esta caducidad con NX, XX o GET."
+      }
+    ],
+    "notes": [],
+    "errors": [
+      "ERR wrong number of arguments: revisa la sintaxis.",
+      "WRONGTYPE: una operación sobre String recibió otra estructura.",
+      "ERR invalid expire time: el tiempo debe ser positivo."
+    ],
+    "lab": "cache",
+    "replacement": "Utiliza SET con EX."
+  },
+  "PSETEX": {
+    "documentation": "detailed",
+    "options": [
+      "PSETEX key milliseconds value. La caducidad debe ser un entero positivo."
+    ],
+    "response": "Respuesta simple OK.",
+    "ttl": "Sustituye el valor y establece una nueva caducidad relativa.",
+    "examples": [
+      {
+        "title": "Guardar una caché",
+        "setup": [
+          "DEL guia:cache"
+        ],
+        "commands": [
+          "PSETEX guia:cache 60000 \"resultado\"",
+          "GET guia:cache"
+        ],
+        "expected": "OK; \"resultado\"",
+        "explanation": "Valor y caducidad se establecen juntos."
+      },
+      {
+        "title": "Alternativa moderna",
+        "setup": [
+          "DEL guia:cache"
+        ],
+        "commands": [
+          "SET guia:cache \"resultado\" PX 60000",
+          "TTL guia:cache"
+        ],
+        "expected": "OK; entre 59 y 60 inmediatamente",
+        "explanation": "SET permite combinar esta caducidad con NX, XX o GET."
+      }
+    ],
+    "notes": [],
+    "errors": [
+      "ERR wrong number of arguments: revisa la sintaxis.",
+      "WRONGTYPE: una operación sobre String recibió otra estructura.",
+      "ERR invalid expire time: el tiempo debe ser positivo."
+    ],
+    "lab": "cache",
+    "replacement": "Utiliza SET con PX."
+  },
+  "SETNX": {
+    "documentation": "detailed",
+    "options": [],
+    "response": "Entero: 1 si creó la clave, 0 si ya existía.",
+    "ttl": "Crea sin caducidad; conserva el valor y TTL si la clave ya existe.",
+    "examples": [
+      {
+        "title": "Crear si está ausente",
+        "setup": [
+          "DEL guia:reserva"
+        ],
+        "commands": [
+          "SETNX guia:reserva \"Ana\"",
+          "SETNX guia:reserva \"Luis\""
+        ],
+        "expected": "1; 0",
+        "explanation": "La primera persona reserva; la segunda no sobrescribe."
+      },
+      {
+        "title": "Alternativa con caducidad",
+        "setup": [
+          "DEL guia:reserva"
+        ],
+        "commands": [
+          "SET guia:reserva \"Ana\" NX EX 30"
+        ],
+        "expected": "OK",
+        "explanation": "SET NX EX evita el intervalo inseguro entre creación y EXPIRE."
+      }
+    ],
+    "notes": [
+      "Un bloqueo distribuido requiere identificador de propietario, liberación segura y análisis de fallos; SETNX por sí solo no es una solución completa."
+    ],
+    "errors": [
+      "ERR wrong number of arguments: revisa la sintaxis.",
+      "WRONGTYPE: una operación sobre String recibió otra estructura."
+    ],
+    "lab": "strings",
+    "replacement": "Utiliza SET NX."
+  },
+  "GETSET": {
+    "documentation": "detailed",
+    "options": [],
+    "response": "String anterior o nulo si no existía.",
+    "ttl": "Sustituye el String y elimina su caducidad anterior.",
+    "examples": [
+      {
+        "title": "Intercambiar el valor",
+        "setup": [
+          "SET guia:estado viejo EX 60"
+        ],
+        "commands": [
+          "GETSET guia:estado nuevo",
+          "TTL guia:estado"
+        ],
+        "expected": "\"viejo\"; -1",
+        "explanation": "Se obtiene el estado anterior mientras se guarda el siguiente."
+      },
+      {
+        "title": "Alternativa moderna",
+        "setup": [
+          "SET guia:estado viejo EX 60"
+        ],
+        "commands": [
+          "SET guia:estado nuevo GET KEEPTTL"
+        ],
+        "expected": "\"viejo\"",
+        "explanation": "SET GET permite además conservar el TTL con KEEPTTL."
+      }
+    ],
+    "notes": [],
+    "errors": [
+      "ERR wrong number of arguments: revisa la sintaxis.",
+      "WRONGTYPE: una operación sobre String recibió otra estructura."
+    ],
+    "lab": "strings",
+    "replacement": "Utiliza SET GET."
+  },
+  "LCS": {
+    "documentation": "detailed",
+    "options": [
+      "Sin opciones devuelve la subsecuencia común más larga, que puede saltar bytes en ambos Strings.",
+      "LEN devuelve solo la longitud. IDX devuelve intervalos coincidentes y longitud total. LEN e IDX son incompatibles.",
+      "Con IDX, MINMATCHLEN n filtra intervalos cortos y WITHMATCHLEN añade la longitud de cada coincidencia. El campo len sigue siendo la longitud de la subsecuencia completa."
+    ],
+    "response": "String por defecto; entero con LEN; mapa de matches y len con IDX.",
+    "ttl": "No modifica el valor ni su caducidad. Una clave caducada se trata como inexistente.",
+    "examples": [
+      {
+        "title": "Subsecuencia, no subcadena",
+        "setup": [
+          "MSET guia:a abcd guia:b axbd"
+        ],
+        "commands": [
+          "LCS guia:a guia:b",
+          "LCS guia:a guia:b LEN"
+        ],
+        "expected": "\"abd\"; 3",
+        "explanation": "a, b y d aparecen en el mismo orden aunque no sean contiguos."
+      },
+      {
+        "title": "Inspeccionar posiciones",
+        "setup": [
+          "MSET guia:a abc guia:b abc"
+        ],
+        "commands": [
+          "LCS guia:a guia:b IDX MINMATCHLEN 2 WITHMATCHLEN"
+        ],
+        "expected": "matches: [[[0,2],[0,2],3]], len: 3",
+        "explanation": "Los intervalos son inclusivos y se expresan en índices de bytes."
+      }
+    ],
+    "notes": [
+      "Coste O(N×M) en tiempo y memoria para reconstrucción: no lo ejecutes sobre valores grandes en un servidor compartido. El laboratorio limita el tamaño."
+    ],
+    "errors": [
+      "ERR wrong number of arguments: revisa la sintaxis.",
+      "WRONGTYPE: una operación sobre String recibió otra estructura.",
+      "ERR If you want both the length and indexes, please just use IDX: no combines LEN e IDX."
+    ],
+    "lab": "strings"
+  },
+  "HSET": {
+    "documentation": "detailed",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:perfil"
+        ],
+        "commands": [
+          "HSET guia:perfil nombre Ana edad 25",
+          "HSET guia:perfil edad 26",
+          "HGET guia:perfil edad"
+        ],
+        "expected": "2; 0; \"26\"",
+        "explanation": "Devuelve campos nuevos, no el número total de campos escritos."
+      }
+    ],
+    "lab": "hashes",
+    "notes": [
+      "Un Hash almacena pares campo-valor de texto. En Redis 7.2 la caducidad se aplica a la clave completa, no a campos individuales. HSET conserva el TTL existente.",
+      "HGETALL es O(N); HSCAN reparte el recorrido, pero puede repetir campos durante una iteración y no garantiza una instantánea."
+    ]
+  },
+  "HSETNX": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:perfil",
+          "HSET guia:perfil nombre Ana"
+        ],
+        "commands": [
+          "HSETNX guia:perfil nombre Luis",
+          "HSETNX guia:perfil ciudad Quito"
+        ],
+        "expected": "0; 1",
+        "explanation": "La condición se aplica al campo, no a la existencia de todo el Hash."
+      }
+    ],
+    "lab": "hashes",
+    "notes": [
+      "Un Hash almacena pares campo-valor de texto. En Redis 7.2 la caducidad se aplica a la clave completa, no a campos individuales. HSET conserva el TTL existente.",
+      "HGETALL es O(N); HSCAN reparte el recorrido, pero puede repetir campos durante una iteración y no garantiza una instantánea."
+    ]
+  },
+  "HGET": {
+    "documentation": "detailed",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:perfil",
+          "HSET guia:perfil nombre Ana"
+        ],
+        "commands": [
+          "HGET guia:perfil nombre",
+          "HGET guia:perfil ciudad"
+        ],
+        "expected": "\"Ana\"; nulo",
+        "explanation": "Un campo ausente produce nulo, aunque el Hash exista."
+      }
+    ],
+    "lab": "hashes",
+    "notes": [
+      "Un Hash almacena pares campo-valor de texto. En Redis 7.2 la caducidad se aplica a la clave completa, no a campos individuales. HSET conserva el TTL existente.",
+      "HGETALL es O(N); HSCAN reparte el recorrido, pero puede repetir campos durante una iteración y no garantiza una instantánea."
+    ]
+  },
+  "HGETALL": {
+    "documentation": "detailed",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:perfil",
+          "HSET guia:perfil nombre Ana edad 25"
+        ],
+        "commands": [
+          "HGETALL guia:perfil"
+        ],
+        "expected": "nombre, Ana, edad, 25 (orden no garantizado)",
+        "explanation": "RESP2 devuelve pares alternos de campo y valor."
+      }
+    ],
+    "lab": "hashes",
+    "notes": [
+      "Un Hash almacena pares campo-valor de texto. En Redis 7.2 la caducidad se aplica a la clave completa, no a campos individuales. HSET conserva el TTL existente.",
+      "HGETALL es O(N); HSCAN reparte el recorrido, pero puede repetir campos durante una iteración y no garantiza una instantánea."
+    ]
+  },
+  "HMGET": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:perfil",
+          "HSET guia:perfil nombre Ana edad 25"
+        ],
+        "commands": [
+          "HMGET guia:perfil edad nombre ciudad"
+        ],
+        "expected": "[\"25\",\"Ana\",null]",
+        "explanation": "La respuesta conserva el orden pedido."
+      }
+    ],
+    "lab": "hashes",
+    "notes": [
+      "Un Hash almacena pares campo-valor de texto. En Redis 7.2 la caducidad se aplica a la clave completa, no a campos individuales. HSET conserva el TTL existente.",
+      "HGETALL es O(N); HSCAN reparte el recorrido, pero puede repetir campos durante una iteración y no garantiza una instantánea."
+    ]
+  },
+  "HMSET": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:perfil"
+        ],
+        "commands": [
+          "HMSET guia:perfil nombre Ana edad 25",
+          "HGET guia:perfil edad"
+        ],
+        "expected": "OK; \"25\"",
+        "explanation": "En código nuevo usa HSET con varios pares."
+      }
+    ],
+    "lab": "hashes",
+    "notes": [
+      "Un Hash almacena pares campo-valor de texto. En Redis 7.2 la caducidad se aplica a la clave completa, no a campos individuales. HSET conserva el TTL existente.",
+      "HGETALL es O(N); HSCAN reparte el recorrido, pero puede repetir campos durante una iteración y no garantiza una instantánea."
+    ]
+  },
+  "HDEL": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:perfil",
+          "HSET guia:perfil nombre Ana edad 25"
+        ],
+        "commands": [
+          "HDEL guia:perfil edad ausente",
+          "HLEN guia:perfil"
+        ],
+        "expected": "1; 1",
+        "explanation": "Solo cuenta los campos que realmente existían."
+      }
+    ],
+    "lab": "hashes",
+    "notes": [
+      "Un Hash almacena pares campo-valor de texto. En Redis 7.2 la caducidad se aplica a la clave completa, no a campos individuales. HSET conserva el TTL existente.",
+      "HGETALL es O(N); HSCAN reparte el recorrido, pero puede repetir campos durante una iteración y no garantiza una instantánea."
+    ]
+  },
+  "HEXISTS": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:perfil",
+          "HSET guia:perfil nombre Ana"
+        ],
+        "commands": [
+          "HEXISTS guia:perfil nombre",
+          "HEXISTS guia:perfil ciudad"
+        ],
+        "expected": "1; 0",
+        "explanation": "Comprueba presencia sin transferir el valor."
+      }
+    ],
+    "lab": "hashes",
+    "notes": [
+      "Un Hash almacena pares campo-valor de texto. En Redis 7.2 la caducidad se aplica a la clave completa, no a campos individuales. HSET conserva el TTL existente.",
+      "HGETALL es O(N); HSCAN reparte el recorrido, pero puede repetir campos durante una iteración y no garantiza una instantánea."
+    ]
+  },
+  "HLEN": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:perfil",
+          "HSET guia:perfil nombre Ana edad 25"
+        ],
+        "commands": [
+          "HLEN guia:perfil"
+        ],
+        "expected": "2",
+        "explanation": "La longitud cuenta campos, no bytes."
+      }
+    ],
+    "lab": "hashes",
+    "notes": [
+      "Un Hash almacena pares campo-valor de texto. En Redis 7.2 la caducidad se aplica a la clave completa, no a campos individuales. HSET conserva el TTL existente.",
+      "HGETALL es O(N); HSCAN reparte el recorrido, pero puede repetir campos durante una iteración y no garantiza una instantánea."
+    ]
+  },
+  "HKEYS": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:perfil",
+          "HSET guia:perfil nombre Ana edad 25"
+        ],
+        "commands": [
+          "HKEYS guia:perfil"
+        ],
+        "expected": "nombre y edad, en cualquier orden",
+        "explanation": "No dependas del orden de los campos."
+      }
+    ],
+    "lab": "hashes",
+    "notes": [
+      "Un Hash almacena pares campo-valor de texto. En Redis 7.2 la caducidad se aplica a la clave completa, no a campos individuales. HSET conserva el TTL existente.",
+      "HGETALL es O(N); HSCAN reparte el recorrido, pero puede repetir campos durante una iteración y no garantiza una instantánea."
+    ]
+  },
+  "HVALS": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:perfil",
+          "HSET guia:perfil nombre Ana edad 25"
+        ],
+        "commands": [
+          "HVALS guia:perfil"
+        ],
+        "expected": "Ana y 25, en cualquier orden",
+        "explanation": "No se incluyen los nombres de los campos."
+      }
+    ],
+    "lab": "hashes",
+    "notes": [
+      "Un Hash almacena pares campo-valor de texto. En Redis 7.2 la caducidad se aplica a la clave completa, no a campos individuales. HSET conserva el TTL existente.",
+      "HGETALL es O(N); HSCAN reparte el recorrido, pero puede repetir campos durante una iteración y no garantiza una instantánea."
+    ]
+  },
+  "HSTRLEN": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:perfil",
+          "HSET guia:perfil nombre \"Ana María\""
+        ],
+        "commands": [
+          "HSTRLEN guia:perfil nombre",
+          "HSTRLEN guia:perfil ausente"
+        ],
+        "expected": "10; 0",
+        "explanation": "La í acentuada ocupa dos bytes UTF-8."
+      }
+    ],
+    "lab": "hashes",
+    "notes": [
+      "Un Hash almacena pares campo-valor de texto. En Redis 7.2 la caducidad se aplica a la clave completa, no a campos individuales. HSET conserva el TTL existente.",
+      "HGETALL es O(N); HSCAN reparte el recorrido, pero puede repetir campos durante una iteración y no garantiza una instantánea."
+    ]
+  },
+  "HINCRBY": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:perfil",
+          "HSET guia:perfil visitas 10"
+        ],
+        "commands": [
+          "HINCRBY guia:perfil visitas -2",
+          "HINCRBY guia:perfil errores 1"
+        ],
+        "expected": "8; 1",
+        "explanation": "Un campo ausente empieza en cero."
+      }
+    ],
+    "lab": "hashes",
+    "notes": [
+      "Un Hash almacena pares campo-valor de texto. En Redis 7.2 la caducidad se aplica a la clave completa, no a campos individuales. HSET conserva el TTL existente.",
+      "HGETALL es O(N); HSCAN reparte el recorrido, pero puede repetir campos durante una iteración y no garantiza una instantánea."
+    ]
+  },
+  "HINCRBYFLOAT": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:perfil",
+          "HSET guia:perfil peso 70.5"
+        ],
+        "commands": [
+          "HINCRBYFLOAT guia:perfil peso 0.25"
+        ],
+        "expected": "\"70.75\"",
+        "explanation": "El resultado es un String decimal; no un entero RESP."
+      }
+    ],
+    "lab": "hashes",
+    "notes": [
+      "Un Hash almacena pares campo-valor de texto. En Redis 7.2 la caducidad se aplica a la clave completa, no a campos individuales. HSET conserva el TTL existente.",
+      "HGETALL es O(N); HSCAN reparte el recorrido, pero puede repetir campos durante una iteración y no garantiza una instantánea."
+    ]
+  },
+  "HRANDFIELD": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:perfil",
+          "HSET guia:perfil nombre Ana edad 25"
+        ],
+        "commands": [
+          "HRANDFIELD guia:perfil 2 WITHVALUES"
+        ],
+        "expected": "Dos campos distintos y sus valores; orden aleatorio",
+        "explanation": "Un contador positivo limita la respuesta a campos diferentes."
+      }
+    ],
+    "lab": "hashes",
+    "notes": [
+      "Un Hash almacena pares campo-valor de texto. En Redis 7.2 la caducidad se aplica a la clave completa, no a campos individuales. HSET conserva el TTL existente.",
+      "HGETALL es O(N); HSCAN reparte el recorrido, pero puede repetir campos durante una iteración y no garantiza una instantánea."
+    ]
+  },
+  "HSCAN": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:perfil",
+          "HSET guia:perfil nombre Ana edad 25"
+        ],
+        "commands": [
+          "HSCAN guia:perfil 0 MATCH n* COUNT 10"
+        ],
+        "expected": "Cursor y pares coincidentes con n*",
+        "explanation": "Continúa con el cursor recibido hasta que vuelva a cero; COUNT es orientativo."
+      }
+    ],
+    "lab": "hashes",
+    "notes": [
+      "Un Hash almacena pares campo-valor de texto. En Redis 7.2 la caducidad se aplica a la clave completa, no a campos individuales. HSET conserva el TTL existente.",
+      "HGETALL es O(N); HSCAN reparte el recorrido, pero puede repetir campos durante una iteración y no garantiza una instantánea."
+    ]
+  },
+  "LPUSH": {
+    "documentation": "detailed",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:cola"
+        ],
+        "commands": [
+          "LPUSH guia:cola a b c",
+          "LRANGE guia:cola 0 -1"
+        ],
+        "expected": "3; [\"c\",\"b\",\"a\"]",
+        "explanation": "Cada argumento se inserta a la izquierda: el orden de los argumentos se invierte."
+      }
+    ],
+    "lab": "lists",
+    "notes": [
+      "Una lista mantiene orden y duplicados. Índices negativos cuentan desde el final y los rangos incluyen ambos extremos.",
+      "RPUSH + LPOP implementa FIFO; LPUSH + LPOP implementa una pila. Retirar el último elemento elimina la clave. Las mutaciones conservan el TTL."
+    ]
+  },
+  "RPUSH": {
+    "documentation": "detailed",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:cola"
+        ],
+        "commands": [
+          "RPUSH guia:cola a b c",
+          "LRANGE guia:cola 0 -1"
+        ],
+        "expected": "3; [\"a\",\"b\",\"c\"]",
+        "explanation": "Con LPOP permite construir una cola FIFO."
+      }
+    ],
+    "lab": "lists",
+    "notes": [
+      "Una lista mantiene orden y duplicados. Índices negativos cuentan desde el final y los rangos incluyen ambos extremos.",
+      "RPUSH + LPOP implementa FIFO; LPUSH + LPOP implementa una pila. Retirar el último elemento elimina la clave. Las mutaciones conservan el TTL."
+    ]
+  },
+  "LPUSHX": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:cola"
+        ],
+        "commands": [
+          "LPUSHX guia:cola a",
+          "RPUSH guia:cola b",
+          "LPUSHX guia:cola a"
+        ],
+        "expected": "0; 1; 2",
+        "explanation": "La variante X nunca crea una lista ausente."
+      }
+    ],
+    "lab": "lists",
+    "notes": [
+      "Una lista mantiene orden y duplicados. Índices negativos cuentan desde el final y los rangos incluyen ambos extremos.",
+      "RPUSH + LPOP implementa FIFO; LPUSH + LPOP implementa una pila. Retirar el último elemento elimina la clave. Las mutaciones conservan el TTL."
+    ]
+  },
+  "RPUSHX": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:cola"
+        ],
+        "commands": [
+          "RPUSHX guia:cola a",
+          "LPUSH guia:cola b",
+          "RPUSHX guia:cola a"
+        ],
+        "expected": "0; 1; 2",
+        "explanation": "Se escribe únicamente si la clave existe con tipo lista."
+      }
+    ],
+    "lab": "lists",
+    "notes": [
+      "Una lista mantiene orden y duplicados. Índices negativos cuentan desde el final y los rangos incluyen ambos extremos.",
+      "RPUSH + LPOP implementa FIFO; LPUSH + LPOP implementa una pila. Retirar el último elemento elimina la clave. Las mutaciones conservan el TTL."
+    ]
+  },
+  "LPOP": {
+    "documentation": "detailed",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:cola",
+          "RPUSH guia:cola a b c"
+        ],
+        "commands": [
+          "LPOP guia:cola 2",
+          "LRANGE guia:cola 0 -1"
+        ],
+        "expected": "[\"a\",\"b\"]; [\"c\"]",
+        "explanation": "Con COUNT la respuesta es una lista; sin COUNT es un único elemento."
+      }
+    ],
+    "lab": "lists",
+    "notes": [
+      "Una lista mantiene orden y duplicados. Índices negativos cuentan desde el final y los rangos incluyen ambos extremos.",
+      "RPUSH + LPOP implementa FIFO; LPUSH + LPOP implementa una pila. Retirar el último elemento elimina la clave. Las mutaciones conservan el TTL."
+    ]
+  },
+  "RPOP": {
+    "documentation": "detailed",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:cola",
+          "RPUSH guia:cola a b c"
+        ],
+        "commands": [
+          "RPOP guia:cola 2",
+          "LRANGE guia:cola 0 -1"
+        ],
+        "expected": "[\"c\",\"b\"]; [\"a\"]",
+        "explanation": "Extrae desde el extremo derecho."
+      }
+    ],
+    "lab": "lists",
+    "notes": [
+      "Una lista mantiene orden y duplicados. Índices negativos cuentan desde el final y los rangos incluyen ambos extremos.",
+      "RPUSH + LPOP implementa FIFO; LPUSH + LPOP implementa una pila. Retirar el último elemento elimina la clave. Las mutaciones conservan el TTL."
+    ]
+  },
+  "LLEN": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:cola",
+          "RPUSH guia:cola a b c"
+        ],
+        "commands": [
+          "LLEN guia:cola"
+        ],
+        "expected": "3",
+        "explanation": "Es una consulta de longitud O(1)."
+      }
+    ],
+    "lab": "lists",
+    "notes": [
+      "Una lista mantiene orden y duplicados. Índices negativos cuentan desde el final y los rangos incluyen ambos extremos.",
+      "RPUSH + LPOP implementa FIFO; LPUSH + LPOP implementa una pila. Retirar el último elemento elimina la clave. Las mutaciones conservan el TTL."
+    ]
+  },
+  "LINDEX": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:cola",
+          "RPUSH guia:cola a b c"
+        ],
+        "commands": [
+          "LINDEX guia:cola -1",
+          "LINDEX guia:cola 10"
+        ],
+        "expected": "\"c\"; nulo",
+        "explanation": "Los índices negativos cuentan desde el final."
+      }
+    ],
+    "lab": "lists",
+    "notes": [
+      "Una lista mantiene orden y duplicados. Índices negativos cuentan desde el final y los rangos incluyen ambos extremos.",
+      "RPUSH + LPOP implementa FIFO; LPUSH + LPOP implementa una pila. Retirar el último elemento elimina la clave. Las mutaciones conservan el TTL."
+    ]
+  },
+  "LRANGE": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:cola",
+          "RPUSH guia:cola a b c"
+        ],
+        "commands": [
+          "LRANGE guia:cola 0 1",
+          "LRANGE guia:cola -1 -1"
+        ],
+        "expected": "[\"a\",\"b\"]; [\"c\"]",
+        "explanation": "El límite final es inclusivo."
+      }
+    ],
+    "lab": "lists",
+    "notes": [
+      "Una lista mantiene orden y duplicados. Índices negativos cuentan desde el final y los rangos incluyen ambos extremos.",
+      "RPUSH + LPOP implementa FIFO; LPUSH + LPOP implementa una pila. Retirar el último elemento elimina la clave. Las mutaciones conservan el TTL."
+    ]
+  },
+  "LSET": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:cola",
+          "RPUSH guia:cola a b c"
+        ],
+        "commands": [
+          "LSET guia:cola 1 B",
+          "LRANGE guia:cola 0 -1"
+        ],
+        "expected": "OK; [\"a\",\"B\",\"c\"]",
+        "explanation": "Un índice fuera de rango produce error: no amplía la lista."
+      }
+    ],
+    "lab": "lists",
+    "notes": [
+      "Una lista mantiene orden y duplicados. Índices negativos cuentan desde el final y los rangos incluyen ambos extremos.",
+      "RPUSH + LPOP implementa FIFO; LPUSH + LPOP implementa una pila. Retirar el último elemento elimina la clave. Las mutaciones conservan el TTL."
+    ]
+  },
+  "LINSERT": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:cola",
+          "RPUSH guia:cola a c"
+        ],
+        "commands": [
+          "LINSERT guia:cola BEFORE c b",
+          "LRANGE guia:cola 0 -1"
+        ],
+        "expected": "3; [\"a\",\"b\",\"c\"]",
+        "explanation": "Busca el primer pivote igual a c."
+      }
+    ],
+    "lab": "lists",
+    "notes": [
+      "Una lista mantiene orden y duplicados. Índices negativos cuentan desde el final y los rangos incluyen ambos extremos.",
+      "RPUSH + LPOP implementa FIFO; LPUSH + LPOP implementa una pila. Retirar el último elemento elimina la clave. Las mutaciones conservan el TTL."
+    ]
+  },
+  "LREM": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:cola",
+          "RPUSH guia:cola a b a a"
+        ],
+        "commands": [
+          "LREM guia:cola -1 a",
+          "LRANGE guia:cola 0 -1"
+        ],
+        "expected": "1; [\"a\",\"b\",\"a\"]",
+        "explanation": "El contador negativo busca desde la derecha; cero elimina todas las apariciones."
+      }
+    ],
+    "lab": "lists",
+    "notes": [
+      "Una lista mantiene orden y duplicados. Índices negativos cuentan desde el final y los rangos incluyen ambos extremos.",
+      "RPUSH + LPOP implementa FIFO; LPUSH + LPOP implementa una pila. Retirar el último elemento elimina la clave. Las mutaciones conservan el TTL."
+    ]
+  },
+  "LTRIM": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:cola",
+          "RPUSH guia:cola a b c d"
+        ],
+        "commands": [
+          "LTRIM guia:cola 1 2",
+          "LRANGE guia:cola 0 -1"
+        ],
+        "expected": "OK; [\"b\",\"c\"]",
+        "explanation": "Conserva solo el intervalo inclusivo pedido."
+      }
+    ],
+    "lab": "lists",
+    "notes": [
+      "Una lista mantiene orden y duplicados. Índices negativos cuentan desde el final y los rangos incluyen ambos extremos.",
+      "RPUSH + LPOP implementa FIFO; LPUSH + LPOP implementa una pila. Retirar el último elemento elimina la clave. Las mutaciones conservan el TTL."
+    ]
+  },
+  "LPOS": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:cola",
+          "RPUSH guia:cola a b a a"
+        ],
+        "commands": [
+          "LPOS guia:cola a COUNT 0"
+        ],
+        "expected": "[0,2,3]",
+        "explanation": "COUNT 0 devuelve todas las posiciones coincidentes."
+      }
+    ],
+    "lab": "lists",
+    "notes": [
+      "Una lista mantiene orden y duplicados. Índices negativos cuentan desde el final y los rangos incluyen ambos extremos.",
+      "RPUSH + LPOP implementa FIFO; LPUSH + LPOP implementa una pila. Retirar el último elemento elimina la clave. Las mutaciones conservan el TTL."
+    ]
+  },
+  "LMOVE": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:cola guia:proceso",
+          "RPUSH guia:cola a b"
+        ],
+        "commands": [
+          "LMOVE guia:cola guia:proceso LEFT RIGHT",
+          "LRANGE guia:proceso 0 -1"
+        ],
+        "expected": "\"a\"; [\"a\"]",
+        "explanation": "Mover a una lista de procesamiento evita perder una tarea al retirarla de la cola."
+      }
+    ],
+    "lab": "lists",
+    "notes": [
+      "Una lista mantiene orden y duplicados. Índices negativos cuentan desde el final y los rangos incluyen ambos extremos.",
+      "RPUSH + LPOP implementa FIFO; LPUSH + LPOP implementa una pila. Retirar el último elemento elimina la clave. Las mutaciones conservan el TTL."
+    ]
+  },
+  "LMPOP": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:cola guia:vacia",
+          "RPUSH guia:cola a b"
+        ],
+        "commands": [
+          "LMPOP 2 guia:vacia guia:cola LEFT COUNT 2"
+        ],
+        "expected": "[\"guia:cola\",[\"a\",\"b\"]]",
+        "explanation": "El resultado identifica la lista de origen."
+      }
+    ],
+    "lab": "lists",
+    "notes": [
+      "Una lista mantiene orden y duplicados. Índices negativos cuentan desde el final y los rangos incluyen ambos extremos.",
+      "RPUSH + LPOP implementa FIFO; LPUSH + LPOP implementa una pila. Retirar el último elemento elimina la clave. Las mutaciones conservan el TTL."
+    ]
+  },
+  "RPOPLPUSH": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:cola guia:proceso",
+          "RPUSH guia:cola a b"
+        ],
+        "commands": [
+          "RPOPLPUSH guia:cola guia:proceso"
+        ],
+        "expected": "\"b\"",
+        "explanation": "Equivale a LMOVE origen destino RIGHT LEFT."
+      }
+    ],
+    "lab": "lists",
+    "notes": [
+      "Una lista mantiene orden y duplicados. Índices negativos cuentan desde el final y los rangos incluyen ambos extremos.",
+      "RPUSH + LPOP implementa FIFO; LPUSH + LPOP implementa una pila. Retirar el último elemento elimina la clave. Las mutaciones conservan el TTL."
+    ]
+  },
+  "SADD": {
+    "documentation": "detailed",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:tags"
+        ],
+        "commands": [
+          "SADD guia:tags redis cache redis",
+          "SCARD guia:tags"
+        ],
+        "expected": "2; 2",
+        "explanation": "Los Sets eliminan duplicados automáticamente."
+      }
+    ],
+    "lab": "sets",
+    "notes": [
+      "Un Set almacena miembros únicos sin orden. Una respuesta válida puede mostrar los mismos miembros en distinto orden.",
+      "Las variantes STORE sobrescriben el destino y eliminan su TTL anterior. Añadir o quitar miembros conserva el TTL del conjunto existente."
+    ]
+  },
+  "SREM": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:tags",
+          "SADD guia:tags redis cache"
+        ],
+        "commands": [
+          "SREM guia:tags cache ausente",
+          "SCARD guia:tags"
+        ],
+        "expected": "1; 1",
+        "explanation": "Solo cuenta miembros existentes eliminados."
+      }
+    ],
+    "lab": "sets",
+    "notes": [
+      "Un Set almacena miembros únicos sin orden. Una respuesta válida puede mostrar los mismos miembros en distinto orden.",
+      "Las variantes STORE sobrescriben el destino y eliminan su TTL anterior. Añadir o quitar miembros conserva el TTL del conjunto existente."
+    ]
+  },
+  "SCARD": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:tags",
+          "SADD guia:tags redis cache"
+        ],
+        "commands": [
+          "SCARD guia:tags"
+        ],
+        "expected": "2",
+        "explanation": "Cuenta elementos únicos en O(1)."
+      }
+    ],
+    "lab": "sets",
+    "notes": [
+      "Un Set almacena miembros únicos sin orden. Una respuesta válida puede mostrar los mismos miembros en distinto orden.",
+      "Las variantes STORE sobrescriben el destino y eliminan su TTL anterior. Añadir o quitar miembros conserva el TTL del conjunto existente."
+    ]
+  },
+  "SMEMBERS": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:tags",
+          "SADD guia:tags redis cache"
+        ],
+        "commands": [
+          "SMEMBERS guia:tags"
+        ],
+        "expected": "redis y cache, sin orden garantizado",
+        "explanation": "No uses el orden de respuesta para representar posiciones."
+      }
+    ],
+    "lab": "sets",
+    "notes": [
+      "Un Set almacena miembros únicos sin orden. Una respuesta válida puede mostrar los mismos miembros en distinto orden.",
+      "Las variantes STORE sobrescriben el destino y eliminan su TTL anterior. Añadir o quitar miembros conserva el TTL del conjunto existente."
+    ]
+  },
+  "SISMEMBER": {
+    "documentation": "detailed",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:tags",
+          "SADD guia:tags redis"
+        ],
+        "commands": [
+          "SISMEMBER guia:tags redis",
+          "SISMEMBER guia:tags sql"
+        ],
+        "expected": "1; 0",
+        "explanation": "Pertenencia exacta sin transferir el Set completo."
+      }
+    ],
+    "lab": "sets",
+    "notes": [
+      "Un Set almacena miembros únicos sin orden. Una respuesta válida puede mostrar los mismos miembros en distinto orden.",
+      "Las variantes STORE sobrescriben el destino y eliminan su TTL anterior. Añadir o quitar miembros conserva el TTL del conjunto existente."
+    ]
+  },
+  "SMISMEMBER": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:tags",
+          "SADD guia:tags redis"
+        ],
+        "commands": [
+          "SMISMEMBER guia:tags redis sql redis"
+        ],
+        "expected": "[1,0,1]",
+        "explanation": "Cada posición corresponde a un miembro solicitado."
+      }
+    ],
+    "lab": "sets",
+    "notes": [
+      "Un Set almacena miembros únicos sin orden. Una respuesta válida puede mostrar los mismos miembros en distinto orden.",
+      "Las variantes STORE sobrescriben el destino y eliminan su TTL anterior. Añadir o quitar miembros conserva el TTL del conjunto existente."
+    ]
+  },
+  "SINTER": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:a guia:b",
+          "SADD guia:a redis sql",
+          "SADD guia:b redis python"
+        ],
+        "commands": [
+          "SINTER guia:a guia:b"
+        ],
+        "expected": "[\"redis\"]",
+        "explanation": "Devuelve solo miembros comunes a todos los Sets."
+      }
+    ],
+    "lab": "sets",
+    "notes": [
+      "Un Set almacena miembros únicos sin orden. Una respuesta válida puede mostrar los mismos miembros en distinto orden.",
+      "Las variantes STORE sobrescriben el destino y eliminan su TTL anterior. Añadir o quitar miembros conserva el TTL del conjunto existente."
+    ]
+  },
+  "SINTERCARD": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:a guia:b",
+          "SADD guia:a redis sql",
+          "SADD guia:b redis python"
+        ],
+        "commands": [
+          "SINTERCARD 2 guia:a guia:b LIMIT 10"
+        ],
+        "expected": "1",
+        "explanation": "numkeys indica cuántas claves siguen; LIMIT permite detener el conteo."
+      }
+    ],
+    "lab": "sets",
+    "notes": [
+      "Un Set almacena miembros únicos sin orden. Una respuesta válida puede mostrar los mismos miembros en distinto orden.",
+      "Las variantes STORE sobrescriben el destino y eliminan su TTL anterior. Añadir o quitar miembros conserva el TTL del conjunto existente."
+    ]
+  },
+  "SINTERSTORE": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:a guia:b guia:resultado",
+          "SADD guia:a redis sql",
+          "SADD guia:b redis python"
+        ],
+        "commands": [
+          "SINTERSTORE guia:resultado guia:a guia:b",
+          "SMEMBERS guia:resultado"
+        ],
+        "expected": "1; [\"redis\"]",
+        "explanation": "Sobrescribe el destino y devuelve su cardinalidad."
+      }
+    ],
+    "lab": "sets",
+    "notes": [
+      "Un Set almacena miembros únicos sin orden. Una respuesta válida puede mostrar los mismos miembros en distinto orden.",
+      "Las variantes STORE sobrescriben el destino y eliminan su TTL anterior. Añadir o quitar miembros conserva el TTL del conjunto existente."
+    ],
+    "ttl": "Sobrescribe el destino y elimina su caducidad anterior. Las claves fuente no cambian."
+  },
+  "SUNION": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:a guia:b",
+          "SADD guia:a redis sql",
+          "SADD guia:b redis python"
+        ],
+        "commands": [
+          "SUNION guia:a guia:b"
+        ],
+        "expected": "redis, sql y python, en cualquier orden",
+        "explanation": "Los miembros repetidos aparecen una sola vez."
+      }
+    ],
+    "lab": "sets",
+    "notes": [
+      "Un Set almacena miembros únicos sin orden. Una respuesta válida puede mostrar los mismos miembros en distinto orden.",
+      "Las variantes STORE sobrescriben el destino y eliminan su TTL anterior. Añadir o quitar miembros conserva el TTL del conjunto existente."
+    ]
+  },
+  "SUNIONSTORE": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:a guia:b guia:resultado",
+          "SADD guia:a redis sql",
+          "SADD guia:b redis python"
+        ],
+        "commands": [
+          "SUNIONSTORE guia:resultado guia:a guia:b",
+          "SCARD guia:resultado"
+        ],
+        "expected": "3; 3",
+        "explanation": "Materializa la unión en una clave nueva."
+      }
+    ],
+    "lab": "sets",
+    "notes": [
+      "Un Set almacena miembros únicos sin orden. Una respuesta válida puede mostrar los mismos miembros en distinto orden.",
+      "Las variantes STORE sobrescriben el destino y eliminan su TTL anterior. Añadir o quitar miembros conserva el TTL del conjunto existente."
+    ],
+    "ttl": "Sobrescribe el destino y elimina su caducidad anterior. Las claves fuente no cambian."
+  },
+  "SDIFF": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:a guia:b",
+          "SADD guia:a redis sql",
+          "SADD guia:b redis python"
+        ],
+        "commands": [
+          "SDIFF guia:a guia:b"
+        ],
+        "expected": "[\"sql\"]",
+        "explanation": "La diferencia no es conmutativa: importa cuál es el primer Set."
+      }
+    ],
+    "lab": "sets",
+    "notes": [
+      "Un Set almacena miembros únicos sin orden. Una respuesta válida puede mostrar los mismos miembros en distinto orden.",
+      "Las variantes STORE sobrescriben el destino y eliminan su TTL anterior. Añadir o quitar miembros conserva el TTL del conjunto existente."
+    ]
+  },
+  "SDIFFSTORE": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:a guia:b guia:resultado",
+          "SADD guia:a redis sql",
+          "SADD guia:b redis python"
+        ],
+        "commands": [
+          "SDIFFSTORE guia:resultado guia:a guia:b"
+        ],
+        "expected": "1",
+        "explanation": "El destino guarda los miembros exclusivos del primer Set."
+      }
+    ],
+    "lab": "sets",
+    "notes": [
+      "Un Set almacena miembros únicos sin orden. Una respuesta válida puede mostrar los mismos miembros en distinto orden.",
+      "Las variantes STORE sobrescriben el destino y eliminan su TTL anterior. Añadir o quitar miembros conserva el TTL del conjunto existente."
+    ],
+    "ttl": "Sobrescribe el destino y elimina su caducidad anterior. Las claves fuente no cambian."
+  },
+  "SMOVE": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:a guia:b",
+          "SADD guia:a redis sql"
+        ],
+        "commands": [
+          "SMOVE guia:a guia:b redis",
+          "SISMEMBER guia:a redis",
+          "SISMEMBER guia:b redis"
+        ],
+        "expected": "1; 0; 1",
+        "explanation": "Retirada e inserción se coordinan atómicamente."
+      }
+    ],
+    "lab": "sets",
+    "notes": [
+      "Un Set almacena miembros únicos sin orden. Una respuesta válida puede mostrar los mismos miembros en distinto orden.",
+      "Las variantes STORE sobrescriben el destino y eliminan su TTL anterior. Añadir o quitar miembros conserva el TTL del conjunto existente."
+    ]
+  },
+  "SPOP": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:tags",
+          "SADD guia:tags a b c"
+        ],
+        "commands": [
+          "SPOP guia:tags 2",
+          "SCARD guia:tags"
+        ],
+        "expected": "Dos miembros distintos; 1",
+        "explanation": "El resultado exacto es aleatorio, la cantidad restante es observable."
+      }
+    ],
+    "lab": "sets",
+    "notes": [
+      "Un Set almacena miembros únicos sin orden. Una respuesta válida puede mostrar los mismos miembros en distinto orden.",
+      "Las variantes STORE sobrescriben el destino y eliminan su TTL anterior. Añadir o quitar miembros conserva el TTL del conjunto existente."
+    ]
+  },
+  "SRANDMEMBER": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:tags",
+          "SADD guia:tags a b c"
+        ],
+        "commands": [
+          "SRANDMEMBER guia:tags -4",
+          "SCARD guia:tags"
+        ],
+        "expected": "Cuatro miembros con posibles repeticiones; 3",
+        "explanation": "Con contador negativo se permite repetir y nunca se elimina."
+      }
+    ],
+    "lab": "sets",
+    "notes": [
+      "Un Set almacena miembros únicos sin orden. Una respuesta válida puede mostrar los mismos miembros en distinto orden.",
+      "Las variantes STORE sobrescriben el destino y eliminan su TTL anterior. Añadir o quitar miembros conserva el TTL del conjunto existente."
+    ]
+  },
+  "SSCAN": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:tags",
+          "SADD guia:tags redis rabbit sql"
+        ],
+        "commands": [
+          "SSCAN guia:tags 0 MATCH r* COUNT 10"
+        ],
+        "expected": "Cursor y miembros redis/rabbit",
+        "explanation": "Una iteración completa termina cuando el cursor devuelto vuelve a cero."
+      }
+    ],
+    "lab": "sets",
+    "notes": [
+      "Un Set almacena miembros únicos sin orden. Una respuesta válida puede mostrar los mismos miembros en distinto orden.",
+      "Las variantes STORE sobrescriben el destino y eliminan su TTL anterior. Añadir o quitar miembros conserva el TTL del conjunto existente."
+    ]
+  },
+  "ZADD": {
+    "documentation": "detailed",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:ranking"
+        ],
+        "commands": [
+          "ZADD guia:ranking 10 Ana 20 Luis",
+          "ZADD guia:ranking XX CH 25 Ana",
+          "ZSCORE guia:ranking Ana"
+        ],
+        "expected": "2; 1; \"25\"",
+        "explanation": "XX exige existencia; CH cuenta cambios además de nuevas inserciones."
+      }
+    ],
+    "lab": "sorted-sets",
+    "notes": [
+      "Cada miembro es único y tiene una puntuación de coma flotante. Los empates se ordenan por bytes del miembro.",
+      "ZRANGE unifica consultas por rango, puntuación y orden inverso desde Redis 6.2. BYLEX solo ofrece un orden útil cuando las puntuaciones son iguales.",
+      "ZADD NX y XX son excluyentes; NX no se combina con GT/LT. GT y LT son excluyentes. INCR acepta un único par y devuelve la puntuación, o nulo si no se aplica."
+    ]
+  },
+  "ZCARD": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:ranking",
+          "ZADD guia:ranking 10 Ana 20 Luis"
+        ],
+        "commands": [
+          "ZCARD guia:ranking"
+        ],
+        "expected": "2",
+        "explanation": "Cuenta miembros, independientemente de sus puntuaciones."
+      }
+    ],
+    "lab": "sorted-sets",
+    "notes": [
+      "Cada miembro es único y tiene una puntuación de coma flotante. Los empates se ordenan por bytes del miembro.",
+      "ZRANGE unifica consultas por rango, puntuación y orden inverso desde Redis 6.2. BYLEX solo ofrece un orden útil cuando las puntuaciones son iguales.",
+      "ZADD NX y XX son excluyentes; NX no se combina con GT/LT. GT y LT son excluyentes. INCR acepta un único par y devuelve la puntuación, o nulo si no se aplica."
+    ]
+  },
+  "ZCOUNT": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:ranking",
+          "ZADD guia:ranking 10 Ana 20 Luis 30 Eva"
+        ],
+        "commands": [
+          "ZCOUNT guia:ranking (10 30"
+        ],
+        "expected": "2",
+        "explanation": "El prefijo ( excluye el límite inferior; sin prefijo es inclusivo."
+      }
+    ],
+    "lab": "sorted-sets",
+    "notes": [
+      "Cada miembro es único y tiene una puntuación de coma flotante. Los empates se ordenan por bytes del miembro.",
+      "ZRANGE unifica consultas por rango, puntuación y orden inverso desde Redis 6.2. BYLEX solo ofrece un orden útil cuando las puntuaciones son iguales.",
+      "ZADD NX y XX son excluyentes; NX no se combina con GT/LT. GT y LT son excluyentes. INCR acepta un único par y devuelve la puntuación, o nulo si no se aplica."
+    ]
+  },
+  "ZSCORE": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:ranking",
+          "ZADD guia:ranking 10 Ana"
+        ],
+        "commands": [
+          "ZSCORE guia:ranking Ana",
+          "ZSCORE guia:ranking Luis"
+        ],
+        "expected": "\"10\"; nulo",
+        "explanation": "La puntuación se representa como texto en RESP2."
+      }
+    ],
+    "lab": "sorted-sets",
+    "notes": [
+      "Cada miembro es único y tiene una puntuación de coma flotante. Los empates se ordenan por bytes del miembro.",
+      "ZRANGE unifica consultas por rango, puntuación y orden inverso desde Redis 6.2. BYLEX solo ofrece un orden útil cuando las puntuaciones son iguales.",
+      "ZADD NX y XX son excluyentes; NX no se combina con GT/LT. GT y LT son excluyentes. INCR acepta un único par y devuelve la puntuación, o nulo si no se aplica."
+    ]
+  },
+  "ZMSCORE": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:ranking",
+          "ZADD guia:ranking 10 Ana"
+        ],
+        "commands": [
+          "ZMSCORE guia:ranking Ana Luis"
+        ],
+        "expected": "[\"10\",null]",
+        "explanation": "Permite recuperar varias puntuaciones en un solo viaje."
+      }
+    ],
+    "lab": "sorted-sets",
+    "notes": [
+      "Cada miembro es único y tiene una puntuación de coma flotante. Los empates se ordenan por bytes del miembro.",
+      "ZRANGE unifica consultas por rango, puntuación y orden inverso desde Redis 6.2. BYLEX solo ofrece un orden útil cuando las puntuaciones son iguales.",
+      "ZADD NX y XX son excluyentes; NX no se combina con GT/LT. GT y LT son excluyentes. INCR acepta un único par y devuelve la puntuación, o nulo si no se aplica."
+    ]
+  },
+  "ZINCRBY": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:ranking",
+          "ZADD guia:ranking 10 Ana"
+        ],
+        "commands": [
+          "ZINCRBY guia:ranking 2.5 Ana"
+        ],
+        "expected": "\"12.5\"",
+        "explanation": "La puntuación admite decimales finitos."
+      }
+    ],
+    "lab": "sorted-sets",
+    "notes": [
+      "Cada miembro es único y tiene una puntuación de coma flotante. Los empates se ordenan por bytes del miembro.",
+      "ZRANGE unifica consultas por rango, puntuación y orden inverso desde Redis 6.2. BYLEX solo ofrece un orden útil cuando las puntuaciones son iguales.",
+      "ZADD NX y XX son excluyentes; NX no se combina con GT/LT. GT y LT son excluyentes. INCR acepta un único par y devuelve la puntuación, o nulo si no se aplica."
+    ]
+  },
+  "ZRANGE": {
+    "documentation": "detailed",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:ranking",
+          "ZADD guia:ranking 10 Ana 20 Luis 30 Eva"
+        ],
+        "commands": [
+          "ZRANGE guia:ranking 0 1 REV WITHSCORES"
+        ],
+        "expected": "[\"Eva\",\"30\",\"Luis\",\"20\"]",
+        "explanation": "REV presenta primero las puntuaciones más altas; stop sigue siendo inclusivo."
+      }
+    ],
+    "lab": "sorted-sets",
+    "notes": [
+      "Cada miembro es único y tiene una puntuación de coma flotante. Los empates se ordenan por bytes del miembro.",
+      "ZRANGE unifica consultas por rango, puntuación y orden inverso desde Redis 6.2. BYLEX solo ofrece un orden útil cuando las puntuaciones son iguales.",
+      "ZADD NX y XX son excluyentes; NX no se combina con GT/LT. GT y LT son excluyentes. INCR acepta un único par y devuelve la puntuación, o nulo si no se aplica."
+    ]
+  },
+  "ZRANGESTORE": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:ranking guia:top",
+          "ZADD guia:ranking 10 Ana 20 Luis 30 Eva"
+        ],
+        "commands": [
+          "ZRANGESTORE guia:top guia:ranking 0 1 REV",
+          "ZCARD guia:top"
+        ],
+        "expected": "2; 2",
+        "explanation": "El destino contiene los dos primeros miembros del rango seleccionado."
+      }
+    ],
+    "lab": "sorted-sets",
+    "notes": [
+      "Cada miembro es único y tiene una puntuación de coma flotante. Los empates se ordenan por bytes del miembro.",
+      "ZRANGE unifica consultas por rango, puntuación y orden inverso desde Redis 6.2. BYLEX solo ofrece un orden útil cuando las puntuaciones son iguales.",
+      "ZADD NX y XX son excluyentes; NX no se combina con GT/LT. GT y LT son excluyentes. INCR acepta un único par y devuelve la puntuación, o nulo si no se aplica."
+    ],
+    "ttl": "Sobrescribe el destino y elimina su caducidad anterior. Las claves fuente no cambian."
+  },
+  "ZRANGEBYSCORE": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:ranking",
+          "ZADD guia:ranking 10 Ana 20 Luis 30 Eva"
+        ],
+        "commands": [
+          "ZRANGEBYSCORE guia:ranking 10 20 WITHSCORES"
+        ],
+        "expected": "[\"Ana\",\"10\",\"Luis\",\"20\"]",
+        "explanation": "Alternativa actual: ZRANGE clave 10 20 BYSCORE WITHSCORES."
+      }
+    ],
+    "lab": "sorted-sets",
+    "notes": [
+      "Cada miembro es único y tiene una puntuación de coma flotante. Los empates se ordenan por bytes del miembro.",
+      "ZRANGE unifica consultas por rango, puntuación y orden inverso desde Redis 6.2. BYLEX solo ofrece un orden útil cuando las puntuaciones son iguales.",
+      "ZADD NX y XX son excluyentes; NX no se combina con GT/LT. GT y LT son excluyentes. INCR acepta un único par y devuelve la puntuación, o nulo si no se aplica."
+    ]
+  },
+  "ZRANGEBYLEX": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:lex",
+          "ZADD guia:lex 0 ana 0 bea 0 carla"
+        ],
+        "commands": [
+          "ZRANGEBYLEX guia:lex [ana (carla"
+        ],
+        "expected": "[\"ana\",\"bea\"]",
+        "explanation": "Los rangos lexicográficos requieren igual puntuación para resultados útiles."
+      }
+    ],
+    "lab": "sorted-sets",
+    "notes": [
+      "Cada miembro es único y tiene una puntuación de coma flotante. Los empates se ordenan por bytes del miembro.",
+      "ZRANGE unifica consultas por rango, puntuación y orden inverso desde Redis 6.2. BYLEX solo ofrece un orden útil cuando las puntuaciones son iguales.",
+      "ZADD NX y XX son excluyentes; NX no se combina con GT/LT. GT y LT son excluyentes. INCR acepta un único par y devuelve la puntuación, o nulo si no se aplica."
+    ]
+  },
+  "ZREVRANGE": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:ranking",
+          "ZADD guia:ranking 10 Ana 20 Luis"
+        ],
+        "commands": [
+          "ZREVRANGE guia:ranking 0 -1"
+        ],
+        "expected": "[\"Luis\",\"Ana\"]",
+        "explanation": "Alternativa actual: ZRANGE clave 0 -1 REV."
+      }
+    ],
+    "lab": "sorted-sets",
+    "notes": [
+      "Cada miembro es único y tiene una puntuación de coma flotante. Los empates se ordenan por bytes del miembro.",
+      "ZRANGE unifica consultas por rango, puntuación y orden inverso desde Redis 6.2. BYLEX solo ofrece un orden útil cuando las puntuaciones son iguales.",
+      "ZADD NX y XX son excluyentes; NX no se combina con GT/LT. GT y LT son excluyentes. INCR acepta un único par y devuelve la puntuación, o nulo si no se aplica."
+    ]
+  },
+  "ZREVRANGEBYSCORE": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:ranking",
+          "ZADD guia:ranking 10 Ana 20 Luis 30 Eva"
+        ],
+        "commands": [
+          "ZREVRANGEBYSCORE guia:ranking 30 20"
+        ],
+        "expected": "[\"Eva\",\"Luis\"]",
+        "explanation": "En orden inverso se especifica primero el límite mayor."
+      }
+    ],
+    "lab": "sorted-sets",
+    "notes": [
+      "Cada miembro es único y tiene una puntuación de coma flotante. Los empates se ordenan por bytes del miembro.",
+      "ZRANGE unifica consultas por rango, puntuación y orden inverso desde Redis 6.2. BYLEX solo ofrece un orden útil cuando las puntuaciones son iguales.",
+      "ZADD NX y XX son excluyentes; NX no se combina con GT/LT. GT y LT son excluyentes. INCR acepta un único par y devuelve la puntuación, o nulo si no se aplica."
+    ]
+  },
+  "ZREVRANGEBYLEX": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:lex",
+          "ZADD guia:lex 0 ana 0 bea 0 carla"
+        ],
+        "commands": [
+          "ZREVRANGEBYLEX guia:lex [carla (ana"
+        ],
+        "expected": "[\"carla\",\"bea\"]",
+        "explanation": "Se recorren términos en orden lexicográfico inverso."
+      }
+    ],
+    "lab": "sorted-sets",
+    "notes": [
+      "Cada miembro es único y tiene una puntuación de coma flotante. Los empates se ordenan por bytes del miembro.",
+      "ZRANGE unifica consultas por rango, puntuación y orden inverso desde Redis 6.2. BYLEX solo ofrece un orden útil cuando las puntuaciones son iguales.",
+      "ZADD NX y XX son excluyentes; NX no se combina con GT/LT. GT y LT son excluyentes. INCR acepta un único par y devuelve la puntuación, o nulo si no se aplica."
+    ]
+  },
+  "ZRANK": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:ranking",
+          "ZADD guia:ranking 10 Ana 20 Luis"
+        ],
+        "commands": [
+          "ZRANK guia:ranking Luis"
+        ],
+        "expected": "1",
+        "explanation": "Las posiciones empiezan en cero; puntuaciones empatadas se ordenan por bytes del miembro."
+      }
+    ],
+    "lab": "sorted-sets",
+    "notes": [
+      "Cada miembro es único y tiene una puntuación de coma flotante. Los empates se ordenan por bytes del miembro.",
+      "ZRANGE unifica consultas por rango, puntuación y orden inverso desde Redis 6.2. BYLEX solo ofrece un orden útil cuando las puntuaciones son iguales.",
+      "ZADD NX y XX son excluyentes; NX no se combina con GT/LT. GT y LT son excluyentes. INCR acepta un único par y devuelve la puntuación, o nulo si no se aplica."
+    ]
+  },
+  "ZREVRANK": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:ranking",
+          "ZADD guia:ranking 10 Ana 20 Luis"
+        ],
+        "commands": [
+          "ZREVRANK guia:ranking Luis"
+        ],
+        "expected": "0",
+        "explanation": "La mayor puntuación ocupa la posición cero en orden inverso."
+      }
+    ],
+    "lab": "sorted-sets",
+    "notes": [
+      "Cada miembro es único y tiene una puntuación de coma flotante. Los empates se ordenan por bytes del miembro.",
+      "ZRANGE unifica consultas por rango, puntuación y orden inverso desde Redis 6.2. BYLEX solo ofrece un orden útil cuando las puntuaciones son iguales.",
+      "ZADD NX y XX son excluyentes; NX no se combina con GT/LT. GT y LT son excluyentes. INCR acepta un único par y devuelve la puntuación, o nulo si no se aplica."
+    ]
+  },
+  "ZREM": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:ranking",
+          "ZADD guia:ranking 10 Ana 20 Luis"
+        ],
+        "commands": [
+          "ZREM guia:ranking Ana ausente",
+          "ZCARD guia:ranking"
+        ],
+        "expected": "1; 1",
+        "explanation": "Solo cuenta miembros existentes retirados."
+      }
+    ],
+    "lab": "sorted-sets",
+    "notes": [
+      "Cada miembro es único y tiene una puntuación de coma flotante. Los empates se ordenan por bytes del miembro.",
+      "ZRANGE unifica consultas por rango, puntuación y orden inverso desde Redis 6.2. BYLEX solo ofrece un orden útil cuando las puntuaciones son iguales.",
+      "ZADD NX y XX son excluyentes; NX no se combina con GT/LT. GT y LT son excluyentes. INCR acepta un único par y devuelve la puntuación, o nulo si no se aplica."
+    ]
+  },
+  "ZREMRANGEBYRANK": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:ranking",
+          "ZADD guia:ranking 10 Ana 20 Luis 30 Eva"
+        ],
+        "commands": [
+          "ZREMRANGEBYRANK guia:ranking 0 1",
+          "ZCARD guia:ranking"
+        ],
+        "expected": "2; 1",
+        "explanation": "El intervalo de posiciones es inclusivo."
+      }
+    ],
+    "lab": "sorted-sets",
+    "notes": [
+      "Cada miembro es único y tiene una puntuación de coma flotante. Los empates se ordenan por bytes del miembro.",
+      "ZRANGE unifica consultas por rango, puntuación y orden inverso desde Redis 6.2. BYLEX solo ofrece un orden útil cuando las puntuaciones son iguales.",
+      "ZADD NX y XX son excluyentes; NX no se combina con GT/LT. GT y LT son excluyentes. INCR acepta un único par y devuelve la puntuación, o nulo si no se aplica."
+    ]
+  },
+  "ZREMRANGEBYSCORE": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:ranking",
+          "ZADD guia:ranking 10 Ana 20 Luis 30 Eva"
+        ],
+        "commands": [
+          "ZREMRANGEBYSCORE guia:ranking -inf (20",
+          "ZCARD guia:ranking"
+        ],
+        "expected": "1; 2",
+        "explanation": "Se elimina Ana y se conserva Luis porque el límite superior es exclusivo."
+      }
+    ],
+    "lab": "sorted-sets",
+    "notes": [
+      "Cada miembro es único y tiene una puntuación de coma flotante. Los empates se ordenan por bytes del miembro.",
+      "ZRANGE unifica consultas por rango, puntuación y orden inverso desde Redis 6.2. BYLEX solo ofrece un orden útil cuando las puntuaciones son iguales.",
+      "ZADD NX y XX son excluyentes; NX no se combina con GT/LT. GT y LT son excluyentes. INCR acepta un único par y devuelve la puntuación, o nulo si no se aplica."
+    ]
+  },
+  "ZREMRANGEBYLEX": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:lex",
+          "ZADD guia:lex 0 ana 0 bea 0 carla"
+        ],
+        "commands": [
+          "ZREMRANGEBYLEX guia:lex [ana (carla"
+        ],
+        "expected": "2",
+        "explanation": "Elimina ana y bea; conserva carla."
+      }
+    ],
+    "lab": "sorted-sets",
+    "notes": [
+      "Cada miembro es único y tiene una puntuación de coma flotante. Los empates se ordenan por bytes del miembro.",
+      "ZRANGE unifica consultas por rango, puntuación y orden inverso desde Redis 6.2. BYLEX solo ofrece un orden útil cuando las puntuaciones son iguales.",
+      "ZADD NX y XX son excluyentes; NX no se combina con GT/LT. GT y LT son excluyentes. INCR acepta un único par y devuelve la puntuación, o nulo si no se aplica."
+    ]
+  },
+  "ZLEXCOUNT": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:lex",
+          "ZADD guia:lex 0 ana 0 bea 0 carla"
+        ],
+        "commands": [
+          "ZLEXCOUNT guia:lex [ana (carla"
+        ],
+        "expected": "2",
+        "explanation": "Comparación por bytes con límites inclusivos [ o exclusivos (."
+      }
+    ],
+    "lab": "sorted-sets",
+    "notes": [
+      "Cada miembro es único y tiene una puntuación de coma flotante. Los empates se ordenan por bytes del miembro.",
+      "ZRANGE unifica consultas por rango, puntuación y orden inverso desde Redis 6.2. BYLEX solo ofrece un orden útil cuando las puntuaciones son iguales.",
+      "ZADD NX y XX son excluyentes; NX no se combina con GT/LT. GT y LT son excluyentes. INCR acepta un único par y devuelve la puntuación, o nulo si no se aplica."
+    ]
+  },
+  "ZRANDMEMBER": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:ranking",
+          "ZADD guia:ranking 10 Ana 20 Luis"
+        ],
+        "commands": [
+          "ZRANDMEMBER guia:ranking 2 WITHSCORES"
+        ],
+        "expected": "Ana/10 y Luis/20 en orden aleatorio",
+        "explanation": "Una cantidad positiva devuelve miembros diferentes."
+      }
+    ],
+    "lab": "sorted-sets",
+    "notes": [
+      "Cada miembro es único y tiene una puntuación de coma flotante. Los empates se ordenan por bytes del miembro.",
+      "ZRANGE unifica consultas por rango, puntuación y orden inverso desde Redis 6.2. BYLEX solo ofrece un orden útil cuando las puntuaciones son iguales.",
+      "ZADD NX y XX son excluyentes; NX no se combina con GT/LT. GT y LT son excluyentes. INCR acepta un único par y devuelve la puntuación, o nulo si no se aplica."
+    ]
+  },
+  "ZPOPMIN": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:ranking",
+          "ZADD guia:ranking 10 Ana 20 Luis"
+        ],
+        "commands": [
+          "ZPOPMIN guia:ranking"
+        ],
+        "expected": "[\"Ana\",\"10\"]",
+        "explanation": "Devuelve y elimina el miembro de menor puntuación."
+      }
+    ],
+    "lab": "sorted-sets",
+    "notes": [
+      "Cada miembro es único y tiene una puntuación de coma flotante. Los empates se ordenan por bytes del miembro.",
+      "ZRANGE unifica consultas por rango, puntuación y orden inverso desde Redis 6.2. BYLEX solo ofrece un orden útil cuando las puntuaciones son iguales.",
+      "ZADD NX y XX son excluyentes; NX no se combina con GT/LT. GT y LT son excluyentes. INCR acepta un único par y devuelve la puntuación, o nulo si no se aplica."
+    ]
+  },
+  "ZPOPMAX": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:ranking",
+          "ZADD guia:ranking 10 Ana 20 Luis"
+        ],
+        "commands": [
+          "ZPOPMAX guia:ranking"
+        ],
+        "expected": "[\"Luis\",\"20\"]",
+        "explanation": "Devuelve y elimina el miembro de mayor puntuación."
+      }
+    ],
+    "lab": "sorted-sets",
+    "notes": [
+      "Cada miembro es único y tiene una puntuación de coma flotante. Los empates se ordenan por bytes del miembro.",
+      "ZRANGE unifica consultas por rango, puntuación y orden inverso desde Redis 6.2. BYLEX solo ofrece un orden útil cuando las puntuaciones son iguales.",
+      "ZADD NX y XX son excluyentes; NX no se combina con GT/LT. GT y LT son excluyentes. INCR acepta un único par y devuelve la puntuación, o nulo si no se aplica."
+    ]
+  },
+  "ZMPOP": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:ranking guia:vacio",
+          "ZADD guia:ranking 10 Ana 20 Luis"
+        ],
+        "commands": [
+          "ZMPOP 2 guia:vacio guia:ranking MAX COUNT 1"
+        ],
+        "expected": "[\"guia:ranking\",[[\"Luis\",\"20\"]]]",
+        "explanation": "Identifica la primera clave no vacía y extrae desde el extremo pedido."
+      }
+    ],
+    "lab": "sorted-sets",
+    "notes": [
+      "Cada miembro es único y tiene una puntuación de coma flotante. Los empates se ordenan por bytes del miembro.",
+      "ZRANGE unifica consultas por rango, puntuación y orden inverso desde Redis 6.2. BYLEX solo ofrece un orden útil cuando las puntuaciones son iguales.",
+      "ZADD NX y XX son excluyentes; NX no se combina con GT/LT. GT y LT son excluyentes. INCR acepta un único par y devuelve la puntuación, o nulo si no se aplica."
+    ]
+  },
+  "ZUNION": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:a guia:b",
+          "ZADD guia:a 10 Ana",
+          "ZADD guia:b 5 Ana 20 Luis"
+        ],
+        "commands": [
+          "ZUNION 2 guia:a guia:b WITHSCORES"
+        ],
+        "expected": "[\"Ana\",\"15\",\"Luis\",\"20\"]",
+        "explanation": "Por defecto suma las puntuaciones de los miembros repetidos."
+      }
+    ],
+    "lab": "sorted-sets",
+    "notes": [
+      "Cada miembro es único y tiene una puntuación de coma flotante. Los empates se ordenan por bytes del miembro.",
+      "ZRANGE unifica consultas por rango, puntuación y orden inverso desde Redis 6.2. BYLEX solo ofrece un orden útil cuando las puntuaciones son iguales.",
+      "ZADD NX y XX son excluyentes; NX no se combina con GT/LT. GT y LT son excluyentes. INCR acepta un único par y devuelve la puntuación, o nulo si no se aplica."
+    ]
+  },
+  "ZUNIONSTORE": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:a guia:b guia:r",
+          "ZADD guia:a 10 Ana",
+          "ZADD guia:b 5 Ana 20 Luis"
+        ],
+        "commands": [
+          "ZUNIONSTORE guia:r 2 guia:a guia:b WEIGHTS 2 1",
+          "ZSCORE guia:r Ana"
+        ],
+        "expected": "2; \"25\"",
+        "explanation": "Se pondera la primera puntuación por dos antes de sumar."
+      }
+    ],
+    "lab": "sorted-sets",
+    "notes": [
+      "Cada miembro es único y tiene una puntuación de coma flotante. Los empates se ordenan por bytes del miembro.",
+      "ZRANGE unifica consultas por rango, puntuación y orden inverso desde Redis 6.2. BYLEX solo ofrece un orden útil cuando las puntuaciones son iguales.",
+      "ZADD NX y XX son excluyentes; NX no se combina con GT/LT. GT y LT son excluyentes. INCR acepta un único par y devuelve la puntuación, o nulo si no se aplica."
+    ],
+    "ttl": "Sobrescribe el destino y elimina su caducidad anterior. Las claves fuente no cambian."
+  },
+  "ZINTER": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:a guia:b",
+          "ZADD guia:a 10 Ana",
+          "ZADD guia:b 5 Ana 20 Luis"
+        ],
+        "commands": [
+          "ZINTER 2 guia:a guia:b AGGREGATE MAX WITHSCORES"
+        ],
+        "expected": "[\"Ana\",\"10\"]",
+        "explanation": "MAX elige la mayor puntuación entre las entradas coincidentes."
+      }
+    ],
+    "lab": "sorted-sets",
+    "notes": [
+      "Cada miembro es único y tiene una puntuación de coma flotante. Los empates se ordenan por bytes del miembro.",
+      "ZRANGE unifica consultas por rango, puntuación y orden inverso desde Redis 6.2. BYLEX solo ofrece un orden útil cuando las puntuaciones son iguales.",
+      "ZADD NX y XX son excluyentes; NX no se combina con GT/LT. GT y LT son excluyentes. INCR acepta un único par y devuelve la puntuación, o nulo si no se aplica."
+    ]
+  },
+  "ZINTERCARD": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:a guia:b",
+          "ZADD guia:a 10 Ana",
+          "ZADD guia:b 5 Ana 20 Luis"
+        ],
+        "commands": [
+          "ZINTERCARD 2 guia:a guia:b LIMIT 10"
+        ],
+        "expected": "1",
+        "explanation": "Cuenta la intersección sin devolver ni almacenar sus miembros."
+      }
+    ],
+    "lab": "sorted-sets",
+    "notes": [
+      "Cada miembro es único y tiene una puntuación de coma flotante. Los empates se ordenan por bytes del miembro.",
+      "ZRANGE unifica consultas por rango, puntuación y orden inverso desde Redis 6.2. BYLEX solo ofrece un orden útil cuando las puntuaciones son iguales.",
+      "ZADD NX y XX son excluyentes; NX no se combina con GT/LT. GT y LT son excluyentes. INCR acepta un único par y devuelve la puntuación, o nulo si no se aplica."
+    ]
+  },
+  "ZINTERSTORE": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:a guia:b guia:r",
+          "ZADD guia:a 10 Ana",
+          "ZADD guia:b 5 Ana 20 Luis"
+        ],
+        "commands": [
+          "ZINTERSTORE guia:r 2 guia:a guia:b",
+          "ZSCORE guia:r Ana"
+        ],
+        "expected": "1; \"15\"",
+        "explanation": "La intersección solo conserva Ana y suma sus puntuaciones."
+      }
+    ],
+    "lab": "sorted-sets",
+    "notes": [
+      "Cada miembro es único y tiene una puntuación de coma flotante. Los empates se ordenan por bytes del miembro.",
+      "ZRANGE unifica consultas por rango, puntuación y orden inverso desde Redis 6.2. BYLEX solo ofrece un orden útil cuando las puntuaciones son iguales.",
+      "ZADD NX y XX son excluyentes; NX no se combina con GT/LT. GT y LT son excluyentes. INCR acepta un único par y devuelve la puntuación, o nulo si no se aplica."
+    ],
+    "ttl": "Sobrescribe el destino y elimina su caducidad anterior. Las claves fuente no cambian."
+  },
+  "ZDIFF": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:a guia:b",
+          "ZADD guia:a 10 Ana 20 Luis",
+          "ZADD guia:b 5 Ana"
+        ],
+        "commands": [
+          "ZDIFF 2 guia:a guia:b WITHSCORES"
+        ],
+        "expected": "[\"Luis\",\"20\"]",
+        "explanation": "Conserva la puntuación del primer conjunto para miembros exclusivos."
+      }
+    ],
+    "lab": "sorted-sets",
+    "notes": [
+      "Cada miembro es único y tiene una puntuación de coma flotante. Los empates se ordenan por bytes del miembro.",
+      "ZRANGE unifica consultas por rango, puntuación y orden inverso desde Redis 6.2. BYLEX solo ofrece un orden útil cuando las puntuaciones son iguales.",
+      "ZADD NX y XX son excluyentes; NX no se combina con GT/LT. GT y LT son excluyentes. INCR acepta un único par y devuelve la puntuación, o nulo si no se aplica."
+    ]
+  },
+  "ZDIFFSTORE": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:a guia:b guia:r",
+          "ZADD guia:a 10 Ana 20 Luis",
+          "ZADD guia:b 5 Ana"
+        ],
+        "commands": [
+          "ZDIFFSTORE guia:r 2 guia:a guia:b",
+          "ZSCORE guia:r Luis"
+        ],
+        "expected": "1; \"20\"",
+        "explanation": "El destino almacena la diferencia."
+      }
+    ],
+    "lab": "sorted-sets",
+    "notes": [
+      "Cada miembro es único y tiene una puntuación de coma flotante. Los empates se ordenan por bytes del miembro.",
+      "ZRANGE unifica consultas por rango, puntuación y orden inverso desde Redis 6.2. BYLEX solo ofrece un orden útil cuando las puntuaciones son iguales.",
+      "ZADD NX y XX son excluyentes; NX no se combina con GT/LT. GT y LT son excluyentes. INCR acepta un único par y devuelve la puntuación, o nulo si no se aplica."
+    ],
+    "ttl": "Sobrescribe el destino y elimina su caducidad anterior. Las claves fuente no cambian."
+  },
+  "ZSCAN": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:ranking",
+          "ZADD guia:ranking 10 Ana 20 Luis"
+        ],
+        "commands": [
+          "ZSCAN guia:ranking 0 MATCH A* COUNT 10"
+        ],
+        "expected": "Cursor y par Ana/10",
+        "explanation": "La respuesta no está ordenada por puntuación como ZRANGE."
+      }
+    ],
+    "lab": "sorted-sets",
+    "notes": [
+      "Cada miembro es único y tiene una puntuación de coma flotante. Los empates se ordenan por bytes del miembro.",
+      "ZRANGE unifica consultas por rango, puntuación y orden inverso desde Redis 6.2. BYLEX solo ofrece un orden útil cuando las puntuaciones son iguales.",
+      "ZADD NX y XX son excluyentes; NX no se combina con GT/LT. GT y LT son excluyentes. INCR acepta un único par y devuelve la puntuación, o nulo si no se aplica."
+    ]
+  },
+  "SETBIT": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:dias"
+        ],
+        "commands": [
+          "SETBIT guia:dias 2 1",
+          "SETBIT guia:dias 2 0"
+        ],
+        "expected": "0; 1",
+        "explanation": "La respuesta es el bit anterior; el bit cero es el más significativo del primer byte."
+      }
+    ],
+    "lab": "sets",
+    "notes": [
+      "Los Bitmaps son Strings binarios. Los desplazamientos cuentan bits desde el más significativo de cada byte. STRLEN sigue midiendo bytes.",
+      "BITFIELD admite enteros sin signo hasta 63 bits y con signo hasta 64; OVERFLOW selecciona WRAP, SAT o FAIL para incrementos posteriores. #n expresa el offset como n multiplicado por el ancho del tipo."
+    ]
+  },
+  "GETBIT": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:dias",
+          "SETBIT guia:dias 2 1"
+        ],
+        "commands": [
+          "GETBIT guia:dias 2",
+          "GETBIT guia:dias 100"
+        ],
+        "expected": "1; 0",
+        "explanation": "Un bit fuera de la longitud actual se lee como cero."
+      }
+    ],
+    "lab": null,
+    "notes": [
+      "Los Bitmaps son Strings binarios. Los desplazamientos cuentan bits desde el más significativo de cada byte. STRLEN sigue midiendo bytes.",
+      "BITFIELD admite enteros sin signo hasta 63 bits y con signo hasta 64; OVERFLOW selecciona WRAP, SAT o FAIL para incrementos posteriores. #n expresa el offset como n multiplicado por el ancho del tipo."
+    ]
+  },
+  "BITCOUNT": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:dias",
+          "SETBIT guia:dias 0 1",
+          "SETBIT guia:dias 9 1"
+        ],
+        "commands": [
+          "BITCOUNT guia:dias",
+          "BITCOUNT guia:dias 0 7 BIT"
+        ],
+        "expected": "2; 1",
+        "explanation": "BIT selecciona índices de bits; el modo predeterminado usa bytes."
+      }
+    ],
+    "lab": "bitmaps",
+    "notes": [
+      "Los Bitmaps son Strings binarios. Los desplazamientos cuentan bits desde el más significativo de cada byte. STRLEN sigue midiendo bytes.",
+      "BITFIELD admite enteros sin signo hasta 63 bits y con signo hasta 64; OVERFLOW selecciona WRAP, SAT o FAIL para incrementos posteriores. #n expresa el offset como n multiplicado por el ancho del tipo."
+    ]
+  },
+  "BITPOS": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:dias",
+          "SETBIT guia:dias 3 1"
+        ],
+        "commands": [
+          "BITPOS guia:dias 1"
+        ],
+        "expected": "3",
+        "explanation": "Encuentra el primer bit establecido, empezando desde cero."
+      }
+    ],
+    "lab": "bitmaps",
+    "notes": [
+      "Los Bitmaps son Strings binarios. Los desplazamientos cuentan bits desde el más significativo de cada byte. STRLEN sigue midiendo bytes.",
+      "BITFIELD admite enteros sin signo hasta 63 bits y con signo hasta 64; OVERFLOW selecciona WRAP, SAT o FAIL para incrementos posteriores. #n expresa el offset como n multiplicado por el ancho del tipo."
+    ]
+  },
+  "BITOP": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:a guia:b guia:r",
+          "SETBIT guia:a 0 1",
+          "SETBIT guia:b 1 1"
+        ],
+        "commands": [
+          "BITOP OR guia:r guia:a guia:b",
+          "BITCOUNT guia:r"
+        ],
+        "expected": "1; 2",
+        "explanation": "El resultado ocupa un byte y contiene dos bits establecidos."
+      }
+    ],
+    "lab": "bitmaps",
+    "notes": [
+      "Los Bitmaps son Strings binarios. Los desplazamientos cuentan bits desde el más significativo de cada byte. STRLEN sigue midiendo bytes.",
+      "BITFIELD admite enteros sin signo hasta 63 bits y con signo hasta 64; OVERFLOW selecciona WRAP, SAT o FAIL para incrementos posteriores. #n expresa el offset como n multiplicado por el ancho del tipo."
+    ],
+    "ttl": "Sobrescribe el destino y elimina su caducidad anterior. Las claves fuente no cambian."
+  },
+  "BITFIELD": {
+    "documentation": "detailed",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:packed"
+        ],
+        "commands": [
+          "BITFIELD guia:packed SET u8 0 250 OVERFLOW SAT INCRBY u8 0 10 GET u8 0"
+        ],
+        "expected": "[0,255,255]",
+        "explanation": "SAT satura en el máximo del entero sin signo de ocho bits; WRAP es el modo predeterminado."
+      }
+    ],
+    "lab": "bitmaps",
+    "notes": [
+      "Los Bitmaps son Strings binarios. Los desplazamientos cuentan bits desde el más significativo de cada byte. STRLEN sigue midiendo bytes.",
+      "BITFIELD admite enteros sin signo hasta 63 bits y con signo hasta 64; OVERFLOW selecciona WRAP, SAT o FAIL para incrementos posteriores. #n expresa el offset como n multiplicado por el ancho del tipo."
+    ]
+  },
+  "BITFIELD_RO": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:packed",
+          "BITFIELD guia:packed SET u8 0 42"
+        ],
+        "commands": [
+          "BITFIELD_RO guia:packed GET u8 0"
+        ],
+        "expected": "[42]",
+        "explanation": "Solo permite GET y no crea datos al leer."
+      }
+    ],
+    "lab": "bitmaps",
+    "notes": [
+      "Los Bitmaps son Strings binarios. Los desplazamientos cuentan bits desde el más significativo de cada byte. STRLEN sigue midiendo bytes.",
+      "BITFIELD admite enteros sin signo hasta 63 bits y con signo hasta 64; OVERFLOW selecciona WRAP, SAT o FAIL para incrementos posteriores. #n expresa el offset como n multiplicado por el ancho del tipo."
+    ]
+  },
+  "PFADD": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:unicos"
+        ],
+        "commands": [
+          "PFADD guia:unicos ana luis ana",
+          "PFCOUNT guia:unicos"
+        ],
+        "expected": "1; aproximadamente 2",
+        "explanation": "PFADD indica si cambió la representación, no cuántas personas se añadieron."
+      }
+    ],
+    "lab": "hyperloglog",
+    "notes": [
+      "HyperLogLog estima cardinalidad con error estándar aproximado del 0,81%; no permite enumerar miembros. PFADD devuelve si cambió el registro, no cuántos elementos nuevos hubo.",
+      "La representación binaria nativa de Redis no es portable al motor educativo. No uses este simulador para medir memoria o evaluar estadísticamente el error del algoritmo."
+    ]
+  },
+  "PFCOUNT": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:unicos",
+          "PFADD guia:unicos ana luis ana"
+        ],
+        "commands": [
+          "PFCOUNT guia:unicos"
+        ],
+        "expected": "Aproximadamente 2; para este conjunto pequeño normalmente 2",
+        "explanation": "HyperLogLog estima cardinalidad y no permite enumerar miembros."
+      }
+    ],
+    "lab": "hyperloglog",
+    "notes": [
+      "HyperLogLog estima cardinalidad con error estándar aproximado del 0,81%; no permite enumerar miembros. PFADD devuelve si cambió el registro, no cuántos elementos nuevos hubo.",
+      "La representación binaria nativa de Redis no es portable al motor educativo. No uses este simulador para medir memoria o evaluar estadísticamente el error del algoritmo."
+    ]
+  },
+  "PFMERGE": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:a guia:b guia:r",
+          "PFADD guia:a ana luis",
+          "PFADD guia:b ana eva"
+        ],
+        "commands": [
+          "PFMERGE guia:r guia:a guia:b",
+          "PFCOUNT guia:r"
+        ],
+        "expected": "OK; aproximadamente 3",
+        "explanation": "La unión estima personas distintas sin conservar la lista de identidades."
+      }
+    ],
+    "lab": "hyperloglog",
+    "notes": [
+      "HyperLogLog estima cardinalidad con error estándar aproximado del 0,81%; no permite enumerar miembros. PFADD devuelve si cambió el registro, no cuántos elementos nuevos hubo.",
+      "La representación binaria nativa de Redis no es portable al motor educativo. No uses este simulador para medir memoria o evaluar estadísticamente el error del algoritmo."
+    ]
+  },
+  "GEOADD": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:ciudades"
+        ],
+        "commands": [
+          "GEOADD guia:ciudades -78.4678 -0.1807 Quito -79.8891 -2.1894 Guayaquil"
+        ],
+        "expected": "2",
+        "explanation": "La longitud va antes de la latitud; ambos miembros quedan en un Sorted Set."
+      }
+    ],
+    "lab": "geo",
+    "notes": [
+      "GEOADD recibe longitud entre −180 y 180 y latitud entre −85,05112878 y 85,05112878. Los datos se guardan en un Sorted Set.",
+      "GEOSEARCH exige FROMMEMBER o FROMLONLAT y BYRADIUS o BYBOX. Admite unidades m, km, ft, mi, orden ASC/DESC, COUNT [ANY], WITHCOORD, WITHDIST y WITHHASH.",
+      "La distancia usa una esfera y no representa distancias de conducción ni geometría de precisión topográfica."
+    ]
+  },
+  "GEOPOS": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:ciudades",
+          "GEOADD guia:ciudades -78.4678 -0.1807 Quito"
+        ],
+        "commands": [
+          "GEOPOS guia:ciudades Quito ausente"
+        ],
+        "expected": "Coordenadas cercanas a [-78.4678,-0.1807]; nulo",
+        "explanation": "El almacenamiento geográfico cuantiza las coordenadas; puede haber pequeñas diferencias."
+      }
+    ],
+    "lab": "geo",
+    "notes": [
+      "GEOADD recibe longitud entre −180 y 180 y latitud entre −85,05112878 y 85,05112878. Los datos se guardan en un Sorted Set.",
+      "GEOSEARCH exige FROMMEMBER o FROMLONLAT y BYRADIUS o BYBOX. Admite unidades m, km, ft, mi, orden ASC/DESC, COUNT [ANY], WITHCOORD, WITHDIST y WITHHASH.",
+      "La distancia usa una esfera y no representa distancias de conducción ni geometría de precisión topográfica."
+    ]
+  },
+  "GEODIST": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:ciudades",
+          "GEOADD guia:ciudades -78.4678 -0.1807 Quito -79.8891 -2.1894 Guayaquil"
+        ],
+        "commands": [
+          "GEODIST guia:ciudades Quito Guayaquil km"
+        ],
+        "expected": "Aproximadamente 274 km",
+        "explanation": "Es una distancia sobre una esfera, no una ruta de conducción."
+      }
+    ],
+    "lab": "geo",
+    "notes": [
+      "GEOADD recibe longitud entre −180 y 180 y latitud entre −85,05112878 y 85,05112878. Los datos se guardan en un Sorted Set.",
+      "GEOSEARCH exige FROMMEMBER o FROMLONLAT y BYRADIUS o BYBOX. Admite unidades m, km, ft, mi, orden ASC/DESC, COUNT [ANY], WITHCOORD, WITHDIST y WITHHASH.",
+      "La distancia usa una esfera y no representa distancias de conducción ni geometría de precisión topográfica."
+    ]
+  },
+  "GEOHASH": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:ciudades",
+          "GEOADD guia:ciudades -78.4678 -0.1807 Quito"
+        ],
+        "commands": [
+          "GEOHASH guia:ciudades Quito"
+        ],
+        "expected": "Un geohash de once caracteres",
+        "explanation": "La codificación textual permite compartir una posición aproximada."
+      }
+    ],
+    "lab": "geo",
+    "notes": [
+      "GEOADD recibe longitud entre −180 y 180 y latitud entre −85,05112878 y 85,05112878. Los datos se guardan en un Sorted Set.",
+      "GEOSEARCH exige FROMMEMBER o FROMLONLAT y BYRADIUS o BYBOX. Admite unidades m, km, ft, mi, orden ASC/DESC, COUNT [ANY], WITHCOORD, WITHDIST y WITHHASH.",
+      "La distancia usa una esfera y no representa distancias de conducción ni geometría de precisión topográfica."
+    ]
+  },
+  "GEOSEARCH": {
+    "documentation": "detailed",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:ciudades",
+          "GEOADD guia:ciudades -78.4678 -0.1807 Quito -79.8891 -2.1894 Guayaquil"
+        ],
+        "commands": [
+          "GEOSEARCH guia:ciudades FROMMEMBER Quito BYRADIUS 50 km ASC WITHDIST"
+        ],
+        "expected": "Quito con distancia 0",
+        "explanation": "Guayaquil queda fuera del radio solicitado."
+      }
+    ],
+    "lab": "geo",
+    "notes": [
+      "GEOADD recibe longitud entre −180 y 180 y latitud entre −85,05112878 y 85,05112878. Los datos se guardan en un Sorted Set.",
+      "GEOSEARCH exige FROMMEMBER o FROMLONLAT y BYRADIUS o BYBOX. Admite unidades m, km, ft, mi, orden ASC/DESC, COUNT [ANY], WITHCOORD, WITHDIST y WITHHASH.",
+      "La distancia usa una esfera y no representa distancias de conducción ni geometría de precisión topográfica."
+    ]
+  },
+  "GEOSEARCHSTORE": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:ciudades guia:cerca",
+          "GEOADD guia:ciudades -78.4678 -0.1807 Quito -79.8891 -2.1894 Guayaquil"
+        ],
+        "commands": [
+          "GEOSEARCHSTORE guia:cerca guia:ciudades FROMMEMBER Quito BYRADIUS 50 km",
+          "ZCARD guia:cerca"
+        ],
+        "expected": "1; 1",
+        "explanation": "Por defecto guarda el índice geográfico; STOREDIST guarda distancias como puntuaciones."
+      }
+    ],
+    "lab": "geo",
+    "notes": [
+      "GEOADD recibe longitud entre −180 y 180 y latitud entre −85,05112878 y 85,05112878. Los datos se guardan en un Sorted Set.",
+      "GEOSEARCH exige FROMMEMBER o FROMLONLAT y BYRADIUS o BYBOX. Admite unidades m, km, ft, mi, orden ASC/DESC, COUNT [ANY], WITHCOORD, WITHDIST y WITHHASH.",
+      "La distancia usa una esfera y no representa distancias de conducción ni geometría de precisión topográfica."
+    ],
+    "ttl": "Sobrescribe el destino y elimina su caducidad anterior. Las claves fuente no cambian."
+  },
+  "GEORADIUS": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:ciudades",
+          "GEOADD guia:ciudades -78.4678 -0.1807 Quito"
+        ],
+        "commands": [
+          "GEORADIUS guia:ciudades -78.4678 -0.1807 50 km"
+        ],
+        "expected": "[\"Quito\"]",
+        "explanation": "La alternativa actual es GEOSEARCH FROMLONLAT ... BYRADIUS."
+      }
+    ],
+    "lab": "geo",
+    "notes": [
+      "GEOADD recibe longitud entre −180 y 180 y latitud entre −85,05112878 y 85,05112878. Los datos se guardan en un Sorted Set.",
+      "GEOSEARCH exige FROMMEMBER o FROMLONLAT y BYRADIUS o BYBOX. Admite unidades m, km, ft, mi, orden ASC/DESC, COUNT [ANY], WITHCOORD, WITHDIST y WITHHASH.",
+      "La distancia usa una esfera y no representa distancias de conducción ni geometría de precisión topográfica."
+    ]
+  },
+  "GEORADIUS_RO": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:ciudades",
+          "GEOADD guia:ciudades -78.4678 -0.1807 Quito"
+        ],
+        "commands": [
+          "GEORADIUS_RO guia:ciudades -78.4678 -0.1807 50 km"
+        ],
+        "expected": "[\"Quito\"]",
+        "explanation": "Esta variante no admite almacenamiento del resultado."
+      }
+    ],
+    "lab": "geo",
+    "notes": [
+      "GEOADD recibe longitud entre −180 y 180 y latitud entre −85,05112878 y 85,05112878. Los datos se guardan en un Sorted Set.",
+      "GEOSEARCH exige FROMMEMBER o FROMLONLAT y BYRADIUS o BYBOX. Admite unidades m, km, ft, mi, orden ASC/DESC, COUNT [ANY], WITHCOORD, WITHDIST y WITHHASH.",
+      "La distancia usa una esfera y no representa distancias de conducción ni geometría de precisión topográfica."
+    ]
+  },
+  "GEORADIUSBYMEMBER": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:ciudades",
+          "GEOADD guia:ciudades -78.4678 -0.1807 Quito"
+        ],
+        "commands": [
+          "GEORADIUSBYMEMBER guia:ciudades Quito 50 km"
+        ],
+        "expected": "[\"Quito\"]",
+        "explanation": "La alternativa actual es GEOSEARCH FROMMEMBER ... BYRADIUS."
+      }
+    ],
+    "lab": "geo",
+    "notes": [
+      "GEOADD recibe longitud entre −180 y 180 y latitud entre −85,05112878 y 85,05112878. Los datos se guardan en un Sorted Set.",
+      "GEOSEARCH exige FROMMEMBER o FROMLONLAT y BYRADIUS o BYBOX. Admite unidades m, km, ft, mi, orden ASC/DESC, COUNT [ANY], WITHCOORD, WITHDIST y WITHHASH.",
+      "La distancia usa una esfera y no representa distancias de conducción ni geometría de precisión topográfica."
+    ]
+  },
+  "GEORADIUSBYMEMBER_RO": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:ciudades",
+          "GEOADD guia:ciudades -78.4678 -0.1807 Quito"
+        ],
+        "commands": [
+          "GEORADIUSBYMEMBER_RO guia:ciudades Quito 50 km"
+        ],
+        "expected": "[\"Quito\"]",
+        "explanation": "Se limita a lectura y no guarda el resultado."
+      }
+    ],
+    "lab": "geo",
+    "notes": [
+      "GEOADD recibe longitud entre −180 y 180 y latitud entre −85,05112878 y 85,05112878. Los datos se guardan en un Sorted Set.",
+      "GEOSEARCH exige FROMMEMBER o FROMLONLAT y BYRADIUS o BYBOX. Admite unidades m, km, ft, mi, orden ASC/DESC, COUNT [ANY], WITHCOORD, WITHDIST y WITHHASH.",
+      "La distancia usa una esfera y no representa distancias de conducción ni geometría de precisión topográfica."
+    ]
+  },
+  "XADD": {
+    "documentation": "detailed",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:eventos"
+        ],
+        "commands": [
+          "XADD guia:eventos 1-0 tipo visita usuario ana",
+          "XLEN guia:eventos"
+        ],
+        "expected": "\"1-0\"; 1",
+        "explanation": "Un ID debe ser mayor que el anterior; * genera un ID automáticamente."
+      }
+    ],
+    "lab": "streams",
+    "notes": [
+      "Los IDs tienen formato milisegundos-secuencia y crecen estrictamente. Un Stream puede existir vacío.",
+      "Los grupos reparten eventos entre consumidores. XACK elimina pendientes, no eventos. Después de un fallo pueden repetirse entregas: diseña consumidores idempotentes.",
+      "XREAD y XREADGROUP con BLOCK requieren transporte y conexiones persistentes; la terminal habilita únicamente las variantes sin BLOCK."
+    ]
+  },
+  "XLEN": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:eventos",
+          "XADD guia:eventos 1-0 tipo visita",
+          "XADD guia:eventos 2-0 tipo compra"
+        ],
+        "commands": [
+          "XLEN guia:eventos"
+        ],
+        "expected": "2",
+        "explanation": "Cuenta eventos presentes, no el último número de secuencia."
+      }
+    ],
+    "lab": "streams",
+    "notes": [
+      "Los IDs tienen formato milisegundos-secuencia y crecen estrictamente. Un Stream puede existir vacío.",
+      "Los grupos reparten eventos entre consumidores. XACK elimina pendientes, no eventos. Después de un fallo pueden repetirse entregas: diseña consumidores idempotentes.",
+      "XREAD y XREADGROUP con BLOCK requieren transporte y conexiones persistentes; la terminal habilita únicamente las variantes sin BLOCK."
+    ]
+  },
+  "XRANGE": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:eventos",
+          "XADD guia:eventos 1-0 tipo visita",
+          "XADD guia:eventos 2-0 tipo compra"
+        ],
+        "commands": [
+          "XRANGE guia:eventos - + COUNT 1"
+        ],
+        "expected": "Evento 1-0 con tipo visita",
+        "explanation": "Los símbolos - y + representan los extremos del espacio de IDs."
+      }
+    ],
+    "lab": "streams",
+    "notes": [
+      "Los IDs tienen formato milisegundos-secuencia y crecen estrictamente. Un Stream puede existir vacío.",
+      "Los grupos reparten eventos entre consumidores. XACK elimina pendientes, no eventos. Después de un fallo pueden repetirse entregas: diseña consumidores idempotentes.",
+      "XREAD y XREADGROUP con BLOCK requieren transporte y conexiones persistentes; la terminal habilita únicamente las variantes sin BLOCK."
+    ]
+  },
+  "XREVRANGE": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:eventos",
+          "XADD guia:eventos 1-0 tipo visita",
+          "XADD guia:eventos 2-0 tipo compra"
+        ],
+        "commands": [
+          "XREVRANGE guia:eventos + - COUNT 1"
+        ],
+        "expected": "Evento 2-0 con tipo compra",
+        "explanation": "En orden inverso se indica primero el extremo superior."
+      }
+    ],
+    "lab": "streams",
+    "notes": [
+      "Los IDs tienen formato milisegundos-secuencia y crecen estrictamente. Un Stream puede existir vacío.",
+      "Los grupos reparten eventos entre consumidores. XACK elimina pendientes, no eventos. Después de un fallo pueden repetirse entregas: diseña consumidores idempotentes.",
+      "XREAD y XREADGROUP con BLOCK requieren transporte y conexiones persistentes; la terminal habilita únicamente las variantes sin BLOCK."
+    ]
+  },
+  "XREAD": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:eventos",
+          "XADD guia:eventos 1-0 tipo visita",
+          "XADD guia:eventos 2-0 tipo compra"
+        ],
+        "commands": [
+          "XREAD COUNT 1 STREAMS guia:eventos 0-0"
+        ],
+        "expected": "Stream guia:eventos y evento 1-0",
+        "explanation": "Lee IDs estrictamente posteriores al cursor; conserva el último ID recibido para continuar."
+      }
+    ],
+    "lab": "streams",
+    "notes": [
+      "Los IDs tienen formato milisegundos-secuencia y crecen estrictamente. Un Stream puede existir vacío.",
+      "Los grupos reparten eventos entre consumidores. XACK elimina pendientes, no eventos. Después de un fallo pueden repetirse entregas: diseña consumidores idempotentes.",
+      "XREAD y XREADGROUP con BLOCK requieren transporte y conexiones persistentes; la terminal habilita únicamente las variantes sin BLOCK."
+    ]
+  },
+  "XGROUP CREATE": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:eventos",
+          "XADD guia:eventos 1-0 tipo visita"
+        ],
+        "commands": [
+          "XGROUP CREATE guia:eventos trabajadores 0"
+        ],
+        "expected": "OK",
+        "explanation": "0 permite consumir el historial; $ comienza después del último evento existente."
+      }
+    ],
+    "lab": "streams",
+    "notes": [
+      "Los IDs tienen formato milisegundos-secuencia y crecen estrictamente. Un Stream puede existir vacío.",
+      "Los grupos reparten eventos entre consumidores. XACK elimina pendientes, no eventos. Después de un fallo pueden repetirse entregas: diseña consumidores idempotentes.",
+      "XREAD y XREADGROUP con BLOCK requieren transporte y conexiones persistentes; la terminal habilita únicamente las variantes sin BLOCK."
+    ]
+  },
+  "XGROUP CREATECONSUMER": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:eventos",
+          "XGROUP CREATE guia:eventos trabajadores 0 MKSTREAM"
+        ],
+        "commands": [
+          "XGROUP CREATECONSUMER guia:eventos trabajadores ana"
+        ],
+        "expected": "1",
+        "explanation": "La creación explícita facilita inspeccionar consumidores antes de la primera lectura."
+      }
+    ],
+    "lab": "streams",
+    "notes": [
+      "Los IDs tienen formato milisegundos-secuencia y crecen estrictamente. Un Stream puede existir vacío.",
+      "Los grupos reparten eventos entre consumidores. XACK elimina pendientes, no eventos. Después de un fallo pueden repetirse entregas: diseña consumidores idempotentes.",
+      "XREAD y XREADGROUP con BLOCK requieren transporte y conexiones persistentes; la terminal habilita únicamente las variantes sin BLOCK."
+    ]
+  },
+  "XREADGROUP": {
+    "documentation": "detailed",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:eventos",
+          "XADD guia:eventos 1-0 tipo visita",
+          "XGROUP CREATE guia:eventos trabajadores 0"
+        ],
+        "commands": [
+          "XREADGROUP GROUP trabajadores ana COUNT 1 STREAMS guia:eventos >"
+        ],
+        "expected": "Evento 1-0 entregado a ana",
+        "explanation": "> solicita eventos nuevos para el grupo; el evento queda pendiente hasta XACK."
+      }
+    ],
+    "lab": "streams",
+    "notes": [
+      "Los IDs tienen formato milisegundos-secuencia y crecen estrictamente. Un Stream puede existir vacío.",
+      "Los grupos reparten eventos entre consumidores. XACK elimina pendientes, no eventos. Después de un fallo pueden repetirse entregas: diseña consumidores idempotentes.",
+      "XREAD y XREADGROUP con BLOCK requieren transporte y conexiones persistentes; la terminal habilita únicamente las variantes sin BLOCK."
+    ]
+  },
+  "XPENDING": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:eventos",
+          "XADD guia:eventos 1-0 tipo visita",
+          "XGROUP CREATE guia:eventos trabajadores 0",
+          "XREADGROUP GROUP trabajadores ana STREAMS guia:eventos >"
+        ],
+        "commands": [
+          "XPENDING guia:eventos trabajadores"
+        ],
+        "expected": "Un pendiente, ID mínimo y máximo 1-0, consumidor ana",
+        "explanation": "Permite descubrir trabajo entregado que aún no se confirmó."
+      }
+    ],
+    "lab": "streams",
+    "notes": [
+      "Los IDs tienen formato milisegundos-secuencia y crecen estrictamente. Un Stream puede existir vacío.",
+      "Los grupos reparten eventos entre consumidores. XACK elimina pendientes, no eventos. Después de un fallo pueden repetirse entregas: diseña consumidores idempotentes.",
+      "XREAD y XREADGROUP con BLOCK requieren transporte y conexiones persistentes; la terminal habilita únicamente las variantes sin BLOCK."
+    ]
+  },
+  "XACK": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:eventos",
+          "XADD guia:eventos 1-0 tipo visita",
+          "XGROUP CREATE guia:eventos trabajadores 0",
+          "XREADGROUP GROUP trabajadores ana STREAMS guia:eventos >"
+        ],
+        "commands": [
+          "XACK guia:eventos trabajadores 1-0",
+          "XPENDING guia:eventos trabajadores"
+        ],
+        "expected": "1; cero pendientes",
+        "explanation": "Confirmar retira la entrada de la lista de pendientes, pero no elimina el evento del Stream."
+      }
+    ],
+    "lab": "streams",
+    "notes": [
+      "Los IDs tienen formato milisegundos-secuencia y crecen estrictamente. Un Stream puede existir vacío.",
+      "Los grupos reparten eventos entre consumidores. XACK elimina pendientes, no eventos. Después de un fallo pueden repetirse entregas: diseña consumidores idempotentes.",
+      "XREAD y XREADGROUP con BLOCK requieren transporte y conexiones persistentes; la terminal habilita únicamente las variantes sin BLOCK."
+    ]
+  },
+  "XCLAIM": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:eventos",
+          "XADD guia:eventos 1-0 tipo visita",
+          "XGROUP CREATE guia:eventos trabajadores 0",
+          "XREADGROUP GROUP trabajadores ana STREAMS guia:eventos >"
+        ],
+        "commands": [
+          "XCLAIM guia:eventos trabajadores luis 0 1-0"
+        ],
+        "expected": "Evento 1-0",
+        "explanation": "Con inactividad mínima cero se transfiere inmediatamente; una aplicación real debe dar tiempo al consumidor original."
+      }
+    ],
+    "lab": "streams",
+    "notes": [
+      "Los IDs tienen formato milisegundos-secuencia y crecen estrictamente. Un Stream puede existir vacío.",
+      "Los grupos reparten eventos entre consumidores. XACK elimina pendientes, no eventos. Después de un fallo pueden repetirse entregas: diseña consumidores idempotentes.",
+      "XREAD y XREADGROUP con BLOCK requieren transporte y conexiones persistentes; la terminal habilita únicamente las variantes sin BLOCK."
+    ]
+  },
+  "XAUTOCLAIM": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:eventos",
+          "XADD guia:eventos 1-0 tipo visita",
+          "XGROUP CREATE guia:eventos trabajadores 0",
+          "XREADGROUP GROUP trabajadores ana STREAMS guia:eventos >"
+        ],
+        "commands": [
+          "XAUTOCLAIM guia:eventos trabajadores luis 0 0-0 COUNT 10"
+        ],
+        "expected": "Cursor, evento 1-0 reclamado y lista de IDs eliminados",
+        "explanation": "Avanza por los pendientes sin conocer antes cada ID."
+      }
+    ],
+    "lab": "streams",
+    "notes": [
+      "Los IDs tienen formato milisegundos-secuencia y crecen estrictamente. Un Stream puede existir vacío.",
+      "Los grupos reparten eventos entre consumidores. XACK elimina pendientes, no eventos. Después de un fallo pueden repetirse entregas: diseña consumidores idempotentes.",
+      "XREAD y XREADGROUP con BLOCK requieren transporte y conexiones persistentes; la terminal habilita únicamente las variantes sin BLOCK."
+    ]
+  },
+  "XDEL": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:eventos",
+          "XADD guia:eventos 1-0 tipo visita"
+        ],
+        "commands": [
+          "XDEL guia:eventos 1-0",
+          "XLEN guia:eventos"
+        ],
+        "expected": "1; 0",
+        "explanation": "El Stream puede permanecer como estructura vacía."
+      }
+    ],
+    "lab": "streams",
+    "notes": [
+      "Los IDs tienen formato milisegundos-secuencia y crecen estrictamente. Un Stream puede existir vacío.",
+      "Los grupos reparten eventos entre consumidores. XACK elimina pendientes, no eventos. Después de un fallo pueden repetirse entregas: diseña consumidores idempotentes.",
+      "XREAD y XREADGROUP con BLOCK requieren transporte y conexiones persistentes; la terminal habilita únicamente las variantes sin BLOCK."
+    ]
+  },
+  "XTRIM": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:eventos",
+          "XADD guia:eventos 1-0 tipo visita",
+          "XADD guia:eventos 2-0 tipo compra"
+        ],
+        "commands": [
+          "XTRIM guia:eventos MAXLEN = 1",
+          "XRANGE guia:eventos - +"
+        ],
+        "expected": "1; solo el evento 2-0",
+        "explanation": "= exige longitud exacta; ~ permite recorte aproximado más eficiente."
+      }
+    ],
+    "lab": "streams",
+    "notes": [
+      "Los IDs tienen formato milisegundos-secuencia y crecen estrictamente. Un Stream puede existir vacío.",
+      "Los grupos reparten eventos entre consumidores. XACK elimina pendientes, no eventos. Después de un fallo pueden repetirse entregas: diseña consumidores idempotentes.",
+      "XREAD y XREADGROUP con BLOCK requieren transporte y conexiones persistentes; la terminal habilita únicamente las variantes sin BLOCK."
+    ]
+  },
+  "XGROUP SETID": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:eventos",
+          "XADD guia:eventos 1-0 tipo visita",
+          "XGROUP CREATE guia:eventos trabajadores 0"
+        ],
+        "commands": [
+          "XGROUP SETID guia:eventos trabajadores $"
+        ],
+        "expected": "OK",
+        "explanation": "El siguiente evento nuevo será posterior al último ID actual; no borra pendientes existentes."
+      }
+    ],
+    "lab": "streams",
+    "notes": [
+      "Los IDs tienen formato milisegundos-secuencia y crecen estrictamente. Un Stream puede existir vacío.",
+      "Los grupos reparten eventos entre consumidores. XACK elimina pendientes, no eventos. Después de un fallo pueden repetirse entregas: diseña consumidores idempotentes.",
+      "XREAD y XREADGROUP con BLOCK requieren transporte y conexiones persistentes; la terminal habilita únicamente las variantes sin BLOCK."
+    ]
+  },
+  "XGROUP DESTROY": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:eventos",
+          "XGROUP CREATE guia:eventos trabajadores 0 MKSTREAM"
+        ],
+        "commands": [
+          "XGROUP DESTROY guia:eventos trabajadores"
+        ],
+        "expected": "1",
+        "explanation": "El Stream permanece, pero desaparecen grupo y seguimiento de pendientes."
+      }
+    ],
+    "lab": "streams",
+    "notes": [
+      "Los IDs tienen formato milisegundos-secuencia y crecen estrictamente. Un Stream puede existir vacío.",
+      "Los grupos reparten eventos entre consumidores. XACK elimina pendientes, no eventos. Después de un fallo pueden repetirse entregas: diseña consumidores idempotentes.",
+      "XREAD y XREADGROUP con BLOCK requieren transporte y conexiones persistentes; la terminal habilita únicamente las variantes sin BLOCK."
+    ]
+  },
+  "XGROUP DELCONSUMER": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:eventos",
+          "XGROUP CREATE guia:eventos trabajadores 0 MKSTREAM",
+          "XGROUP CREATECONSUMER guia:eventos trabajadores ana"
+        ],
+        "commands": [
+          "XGROUP DELCONSUMER guia:eventos trabajadores ana"
+        ],
+        "expected": "0",
+        "explanation": "Devuelve sus pendientes; en este caso no había ninguno."
+      }
+    ],
+    "lab": "streams",
+    "notes": [
+      "Los IDs tienen formato milisegundos-secuencia y crecen estrictamente. Un Stream puede existir vacío.",
+      "Los grupos reparten eventos entre consumidores. XACK elimina pendientes, no eventos. Después de un fallo pueden repetirse entregas: diseña consumidores idempotentes.",
+      "XREAD y XREADGROUP con BLOCK requieren transporte y conexiones persistentes; la terminal habilita únicamente las variantes sin BLOCK."
+    ]
+  },
+  "XINFO STREAM": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:eventos",
+          "XADD guia:eventos 1-0 tipo visita"
+        ],
+        "commands": [
+          "XINFO STREAM guia:eventos"
+        ],
+        "expected": "Metadatos con longitud 1 y último ID 1-0",
+        "explanation": "Inspecciona estado sin consumir eventos."
+      }
+    ],
+    "lab": "streams",
+    "notes": [
+      "Los IDs tienen formato milisegundos-secuencia y crecen estrictamente. Un Stream puede existir vacío.",
+      "Los grupos reparten eventos entre consumidores. XACK elimina pendientes, no eventos. Después de un fallo pueden repetirse entregas: diseña consumidores idempotentes.",
+      "XREAD y XREADGROUP con BLOCK requieren transporte y conexiones persistentes; la terminal habilita únicamente las variantes sin BLOCK."
+    ]
+  },
+  "XINFO GROUPS": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:eventos",
+          "XGROUP CREATE guia:eventos trabajadores 0 MKSTREAM"
+        ],
+        "commands": [
+          "XINFO GROUPS guia:eventos"
+        ],
+        "expected": "Grupo trabajadores, cero consumidores y pendientes",
+        "explanation": "Los campos adicionales dependen de la versión."
+      }
+    ],
+    "lab": "streams",
+    "notes": [
+      "Los IDs tienen formato milisegundos-secuencia y crecen estrictamente. Un Stream puede existir vacío.",
+      "Los grupos reparten eventos entre consumidores. XACK elimina pendientes, no eventos. Después de un fallo pueden repetirse entregas: diseña consumidores idempotentes.",
+      "XREAD y XREADGROUP con BLOCK requieren transporte y conexiones persistentes; la terminal habilita únicamente las variantes sin BLOCK."
+    ]
+  },
+  "XINFO CONSUMERS": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:eventos",
+          "XGROUP CREATE guia:eventos trabajadores 0 MKSTREAM",
+          "XGROUP CREATECONSUMER guia:eventos trabajadores ana"
+        ],
+        "commands": [
+          "XINFO CONSUMERS guia:eventos trabajadores"
+        ],
+        "expected": "Consumidor ana con cero pendientes",
+        "explanation": "Los tiempos de inactividad son valores dinámicos."
+      }
+    ],
+    "lab": "streams",
+    "notes": [
+      "Los IDs tienen formato milisegundos-secuencia y crecen estrictamente. Un Stream puede existir vacío.",
+      "Los grupos reparten eventos entre consumidores. XACK elimina pendientes, no eventos. Después de un fallo pueden repetirse entregas: diseña consumidores idempotentes.",
+      "XREAD y XREADGROUP con BLOCK requieren transporte y conexiones persistentes; la terminal habilita únicamente las variantes sin BLOCK."
+    ]
+  },
+  "EXISTS": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:a guia:b",
+          "SET guia:a valor"
+        ],
+        "commands": [
+          "EXISTS guia:a guia:a guia:b"
+        ],
+        "expected": "2",
+        "explanation": "Las claves repetidas se cuentan repetidamente."
+      }
+    ],
+    "lab": null,
+    "notes": [
+      "TTL y PTTL devuelven −2 si la clave no existe y −1 si no tiene caducidad. EXPIRE con tiempo no positivo elimina inmediatamente.",
+      "EXPIRE/PEXPIRE/EXPIREAT/PEXPIREAT admiten NX, XX, GT y LT. NX no se combina con XX/GT/LT; GT y LT son excluyentes. Una clave sin TTL se considera infinita para GT/LT.",
+      "SCAN no garantiza tamaño de lote ni orden: continúa hasta cursor cero y tolera duplicados. MATCH usa patrones glob, no expresiones regulares."
+    ]
+  },
+  "DEL": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "SET guia:a valor",
+          "DEL guia:b"
+        ],
+        "commands": [
+          "DEL guia:a guia:b"
+        ],
+        "expected": "1",
+        "explanation": "La respuesta cuenta claves eliminadas, no argumentos."
+      }
+    ],
+    "lab": null,
+    "notes": [
+      "TTL y PTTL devuelven −2 si la clave no existe y −1 si no tiene caducidad. EXPIRE con tiempo no positivo elimina inmediatamente.",
+      "EXPIRE/PEXPIRE/EXPIREAT/PEXPIREAT admiten NX, XX, GT y LT. NX no se combina con XX/GT/LT; GT y LT son excluyentes. Una clave sin TTL se considera infinita para GT/LT.",
+      "SCAN no garantiza tamaño de lote ni orden: continúa hasta cursor cero y tolera duplicados. MATCH usa patrones glob, no expresiones regulares."
+    ]
+  },
+  "UNLINK": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "SET guia:a valor"
+        ],
+        "commands": [
+          "UNLINK guia:a",
+          "EXISTS guia:a"
+        ],
+        "expected": "1; 0",
+        "explanation": "La desvinculación es inmediata; Redis real difiere la liberación costosa de memoria."
+      }
+    ],
+    "lab": null,
+    "notes": [
+      "TTL y PTTL devuelven −2 si la clave no existe y −1 si no tiene caducidad. EXPIRE con tiempo no positivo elimina inmediatamente.",
+      "EXPIRE/PEXPIRE/EXPIREAT/PEXPIREAT admiten NX, XX, GT y LT. NX no se combina con XX/GT/LT; GT y LT son excluyentes. Una clave sin TTL se considera infinita para GT/LT.",
+      "SCAN no garantiza tamaño de lote ni orden: continúa hasta cursor cero y tolera duplicados. MATCH usa patrones glob, no expresiones regulares."
+    ]
+  },
+  "TYPE": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:perfil",
+          "HSET guia:perfil nombre Ana"
+        ],
+        "commands": [
+          "TYPE guia:perfil",
+          "TYPE guia:ausente"
+        ],
+        "expected": "hash; none",
+        "explanation": "TYPE ayuda a interpretar un error WRONGTYPE."
+      }
+    ],
+    "lab": null,
+    "notes": [
+      "TTL y PTTL devuelven −2 si la clave no existe y −1 si no tiene caducidad. EXPIRE con tiempo no positivo elimina inmediatamente.",
+      "EXPIRE/PEXPIRE/EXPIREAT/PEXPIREAT admiten NX, XX, GT y LT. NX no se combina con XX/GT/LT; GT y LT son excluyentes. Una clave sin TTL se considera infinita para GT/LT.",
+      "SCAN no garantiza tamaño de lote ni orden: continúa hasta cursor cero y tolera duplicados. MATCH usa patrones glob, no expresiones regulares."
+    ]
+  },
+  "KEYS": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "SET guia:busca:uno a",
+          "SET guia:busca:dos b"
+        ],
+        "commands": [
+          "KEYS guia:busca:*"
+        ],
+        "expected": "Las claves guia:busca:uno y guia:busca:dos",
+        "explanation": "En producción prefiere SCAN para recorridos grandes."
+      }
+    ],
+    "lab": null,
+    "notes": [
+      "TTL y PTTL devuelven −2 si la clave no existe y −1 si no tiene caducidad. EXPIRE con tiempo no positivo elimina inmediatamente.",
+      "EXPIRE/PEXPIRE/EXPIREAT/PEXPIREAT admiten NX, XX, GT y LT. NX no se combina con XX/GT/LT; GT y LT son excluyentes. Una clave sin TTL se considera infinita para GT/LT.",
+      "SCAN no garantiza tamaño de lote ni orden: continúa hasta cursor cero y tolera duplicados. MATCH usa patrones glob, no expresiones regulares."
+    ]
+  },
+  "SCAN": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "SET guia:busca:uno a",
+          "SET guia:busca:dos b"
+        ],
+        "commands": [
+          "SCAN 0 MATCH guia:busca:* COUNT 100"
+        ],
+        "expected": "Cursor y claves coincidentes",
+        "explanation": "Aunque devuelva una tanda vacía debes continuar si el cursor no es cero."
+      }
+    ],
+    "lab": "sets",
+    "notes": [
+      "TTL y PTTL devuelven −2 si la clave no existe y −1 si no tiene caducidad. EXPIRE con tiempo no positivo elimina inmediatamente.",
+      "EXPIRE/PEXPIRE/EXPIREAT/PEXPIREAT admiten NX, XX, GT y LT. NX no se combina con XX/GT/LT; GT y LT son excluyentes. Una clave sin TTL se considera infinita para GT/LT.",
+      "SCAN no garantiza tamaño de lote ni orden: continúa hasta cursor cero y tolera duplicados. MATCH usa patrones glob, no expresiones regulares."
+    ]
+  },
+  "RENAME": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "SET guia:origen dato",
+          "SET guia:destino previo"
+        ],
+        "commands": [
+          "RENAME guia:origen guia:destino",
+          "GET guia:destino"
+        ],
+        "expected": "OK; \"dato\"",
+        "explanation": "El destino se reemplaza y recibe también el TTL del origen."
+      }
+    ],
+    "lab": "lists",
+    "notes": [
+      "TTL y PTTL devuelven −2 si la clave no existe y −1 si no tiene caducidad. EXPIRE con tiempo no positivo elimina inmediatamente.",
+      "EXPIRE/PEXPIRE/EXPIREAT/PEXPIREAT admiten NX, XX, GT y LT. NX no se combina con XX/GT/LT; GT y LT son excluyentes. Una clave sin TTL se considera infinita para GT/LT.",
+      "SCAN no garantiza tamaño de lote ni orden: continúa hasta cursor cero y tolera duplicados. MATCH usa patrones glob, no expresiones regulares."
+    ],
+    "ttl": "La clave de destino recibe la fecha de caducidad del origen cuando la operación tiene éxito."
+  },
+  "RENAMENX": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "SET guia:origen dato",
+          "SET guia:destino previo"
+        ],
+        "commands": [
+          "RENAMENX guia:origen guia:destino",
+          "GET guia:origen"
+        ],
+        "expected": "0; \"dato\"",
+        "explanation": "Si el destino ya existe no cambia ninguna clave."
+      }
+    ],
+    "lab": "lists",
+    "notes": [
+      "TTL y PTTL devuelven −2 si la clave no existe y −1 si no tiene caducidad. EXPIRE con tiempo no positivo elimina inmediatamente.",
+      "EXPIRE/PEXPIRE/EXPIREAT/PEXPIREAT admiten NX, XX, GT y LT. NX no se combina con XX/GT/LT; GT y LT son excluyentes. Una clave sin TTL se considera infinita para GT/LT.",
+      "SCAN no garantiza tamaño de lote ni orden: continúa hasta cursor cero y tolera duplicados. MATCH usa patrones glob, no expresiones regulares."
+    ],
+    "ttl": "La clave de destino recibe la fecha de caducidad del origen cuando la operación tiene éxito."
+  },
+  "COPY": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "SET guia:origen dato",
+          "DEL guia:destino"
+        ],
+        "commands": [
+          "COPY guia:origen guia:destino",
+          "GET guia:origen",
+          "GET guia:destino"
+        ],
+        "expected": "1; \"dato\"; \"dato\"",
+        "explanation": "El origen no se elimina; REPLACE permite sobrescribir el destino."
+      }
+    ],
+    "lab": null,
+    "notes": [
+      "TTL y PTTL devuelven −2 si la clave no existe y −1 si no tiene caducidad. EXPIRE con tiempo no positivo elimina inmediatamente.",
+      "EXPIRE/PEXPIRE/EXPIREAT/PEXPIREAT admiten NX, XX, GT y LT. NX no se combina con XX/GT/LT; GT y LT son excluyentes. Una clave sin TTL se considera infinita para GT/LT.",
+      "SCAN no garantiza tamaño de lote ni orden: continúa hasta cursor cero y tolera duplicados. MATCH usa patrones glob, no expresiones regulares."
+    ]
+  },
+  "EXPIRE": {
+    "documentation": "detailed",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "SET guia:cache resultado"
+        ],
+        "commands": [
+          "EXPIRE guia:cache 60 NX",
+          "EXPIRE guia:cache 30 NX",
+          "TTL guia:cache"
+        ],
+        "expected": "1; 0; entre 59 y 60 inmediatamente",
+        "explanation": "NX exige que la clave no tenga todavía caducidad."
+      }
+    ],
+    "lab": null,
+    "notes": [
+      "TTL y PTTL devuelven −2 si la clave no existe y −1 si no tiene caducidad. EXPIRE con tiempo no positivo elimina inmediatamente.",
+      "EXPIRE/PEXPIRE/EXPIREAT/PEXPIREAT admiten NX, XX, GT y LT. NX no se combina con XX/GT/LT; GT y LT son excluyentes. Una clave sin TTL se considera infinita para GT/LT.",
+      "SCAN no garantiza tamaño de lote ni orden: continúa hasta cursor cero y tolera duplicados. MATCH usa patrones glob, no expresiones regulares."
+    ],
+    "ttl": "Consulta o modifica únicamente la caducidad según la operación; no altera el valor de la clave."
+  },
+  "PEXPIRE": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "SET guia:cache resultado"
+        ],
+        "commands": [
+          "PEXPIRE guia:cache 60000",
+          "PTTL guia:cache"
+        ],
+        "expected": "1; entre 59000 y 60000 inmediatamente",
+        "explanation": "La unidad son milisegundos."
+      }
+    ],
+    "lab": null,
+    "notes": [
+      "TTL y PTTL devuelven −2 si la clave no existe y −1 si no tiene caducidad. EXPIRE con tiempo no positivo elimina inmediatamente.",
+      "EXPIRE/PEXPIRE/EXPIREAT/PEXPIREAT admiten NX, XX, GT y LT. NX no se combina con XX/GT/LT; GT y LT son excluyentes. Una clave sin TTL se considera infinita para GT/LT.",
+      "SCAN no garantiza tamaño de lote ni orden: continúa hasta cursor cero y tolera duplicados. MATCH usa patrones glob, no expresiones regulares."
+    ],
+    "ttl": "Consulta o modifica únicamente la caducidad según la operación; no altera el valor de la clave."
+  },
+  "EXPIREAT": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "SET guia:cache resultado"
+        ],
+        "commands": [
+          "EXPIREAT guia:cache 1",
+          "EXISTS guia:cache"
+        ],
+        "expected": "1; 0",
+        "explanation": "Una fecha en el pasado elimina la clave inmediatamente."
+      }
+    ],
+    "lab": null,
+    "notes": [
+      "TTL y PTTL devuelven −2 si la clave no existe y −1 si no tiene caducidad. EXPIRE con tiempo no positivo elimina inmediatamente.",
+      "EXPIRE/PEXPIRE/EXPIREAT/PEXPIREAT admiten NX, XX, GT y LT. NX no se combina con XX/GT/LT; GT y LT son excluyentes. Una clave sin TTL se considera infinita para GT/LT.",
+      "SCAN no garantiza tamaño de lote ni orden: continúa hasta cursor cero y tolera duplicados. MATCH usa patrones glob, no expresiones regulares."
+    ],
+    "ttl": "Consulta o modifica únicamente la caducidad según la operación; no altera el valor de la clave."
+  },
+  "PEXPIREAT": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "SET guia:cache resultado"
+        ],
+        "commands": [
+          "PEXPIREAT guia:cache 1",
+          "EXISTS guia:cache"
+        ],
+        "expected": "1; 0",
+        "explanation": "La fecha absoluta se expresa en milisegundos Unix."
+      }
+    ],
+    "lab": null,
+    "notes": [
+      "TTL y PTTL devuelven −2 si la clave no existe y −1 si no tiene caducidad. EXPIRE con tiempo no positivo elimina inmediatamente.",
+      "EXPIRE/PEXPIRE/EXPIREAT/PEXPIREAT admiten NX, XX, GT y LT. NX no se combina con XX/GT/LT; GT y LT son excluyentes. Una clave sin TTL se considera infinita para GT/LT.",
+      "SCAN no garantiza tamaño de lote ni orden: continúa hasta cursor cero y tolera duplicados. MATCH usa patrones glob, no expresiones regulares."
+    ],
+    "ttl": "Consulta o modifica únicamente la caducidad según la operación; no altera el valor de la clave."
+  },
+  "TTL": {
+    "documentation": "detailed",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "SET guia:fija valor",
+          "DEL guia:ausente",
+          "SET guia:cache dato EX 60"
+        ],
+        "commands": [
+          "TTL guia:fija",
+          "TTL guia:ausente",
+          "TTL guia:cache"
+        ],
+        "expected": "-1; -2; entre 59 y 60 inmediatamente",
+        "explanation": "Distingue clave persistente, inexistente y caducable."
+      }
+    ],
+    "lab": null,
+    "notes": [
+      "TTL y PTTL devuelven −2 si la clave no existe y −1 si no tiene caducidad. EXPIRE con tiempo no positivo elimina inmediatamente.",
+      "EXPIRE/PEXPIRE/EXPIREAT/PEXPIREAT admiten NX, XX, GT y LT. NX no se combina con XX/GT/LT; GT y LT son excluyentes. Una clave sin TTL se considera infinita para GT/LT.",
+      "SCAN no garantiza tamaño de lote ni orden: continúa hasta cursor cero y tolera duplicados. MATCH usa patrones glob, no expresiones regulares."
+    ],
+    "ttl": "Consulta o modifica únicamente la caducidad según la operación; no altera el valor de la clave."
+  },
+  "PTTL": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "SET guia:fija valor",
+          "DEL guia:ausente"
+        ],
+        "commands": [
+          "PTTL guia:fija",
+          "PTTL guia:ausente"
+        ],
+        "expected": "-1; -2",
+        "explanation": "Los valores negativos mantienen el mismo significado que en TTL."
+      }
+    ],
+    "lab": null,
+    "notes": [
+      "TTL y PTTL devuelven −2 si la clave no existe y −1 si no tiene caducidad. EXPIRE con tiempo no positivo elimina inmediatamente.",
+      "EXPIRE/PEXPIRE/EXPIREAT/PEXPIREAT admiten NX, XX, GT y LT. NX no se combina con XX/GT/LT; GT y LT son excluyentes. Una clave sin TTL se considera infinita para GT/LT.",
+      "SCAN no garantiza tamaño de lote ni orden: continúa hasta cursor cero y tolera duplicados. MATCH usa patrones glob, no expresiones regulares."
+    ],
+    "ttl": "Consulta o modifica únicamente la caducidad según la operación; no altera el valor de la clave."
+  },
+  "EXPIRETIME": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "SET guia:fija valor",
+          "DEL guia:ausente"
+        ],
+        "commands": [
+          "EXPIRETIME guia:fija",
+          "EXPIRETIME guia:ausente"
+        ],
+        "expected": "-1; -2",
+        "explanation": "Con caducidad devuelve una fecha absoluta, no un tiempo restante."
+      }
+    ],
+    "lab": null,
+    "notes": [
+      "TTL y PTTL devuelven −2 si la clave no existe y −1 si no tiene caducidad. EXPIRE con tiempo no positivo elimina inmediatamente.",
+      "EXPIRE/PEXPIRE/EXPIREAT/PEXPIREAT admiten NX, XX, GT y LT. NX no se combina con XX/GT/LT; GT y LT son excluyentes. Una clave sin TTL se considera infinita para GT/LT.",
+      "SCAN no garantiza tamaño de lote ni orden: continúa hasta cursor cero y tolera duplicados. MATCH usa patrones glob, no expresiones regulares."
+    ],
+    "ttl": "Consulta o modifica únicamente la caducidad según la operación; no altera el valor de la clave."
+  },
+  "PEXPIRETIME": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "SET guia:fija valor",
+          "DEL guia:ausente"
+        ],
+        "commands": [
+          "PEXPIRETIME guia:fija",
+          "PEXPIRETIME guia:ausente"
+        ],
+        "expected": "-1; -2",
+        "explanation": "Con caducidad devuelve milisegundos desde el inicio de la época Unix."
+      }
+    ],
+    "lab": null,
+    "notes": [
+      "TTL y PTTL devuelven −2 si la clave no existe y −1 si no tiene caducidad. EXPIRE con tiempo no positivo elimina inmediatamente.",
+      "EXPIRE/PEXPIRE/EXPIREAT/PEXPIREAT admiten NX, XX, GT y LT. NX no se combina con XX/GT/LT; GT y LT son excluyentes. Una clave sin TTL se considera infinita para GT/LT.",
+      "SCAN no garantiza tamaño de lote ni orden: continúa hasta cursor cero y tolera duplicados. MATCH usa patrones glob, no expresiones regulares."
+    ],
+    "ttl": "Consulta o modifica únicamente la caducidad según la operación; no altera el valor de la clave."
+  },
+  "PERSIST": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "SET guia:cache dato EX 60"
+        ],
+        "commands": [
+          "PERSIST guia:cache",
+          "TTL guia:cache"
+        ],
+        "expected": "1; -1",
+        "explanation": "La clave conserva su valor y deja de caducar."
+      }
+    ],
+    "lab": null,
+    "notes": [
+      "TTL y PTTL devuelven −2 si la clave no existe y −1 si no tiene caducidad. EXPIRE con tiempo no positivo elimina inmediatamente.",
+      "EXPIRE/PEXPIRE/EXPIREAT/PEXPIREAT admiten NX, XX, GT y LT. NX no se combina con XX/GT/LT; GT y LT son excluyentes. Una clave sin TTL se considera infinita para GT/LT.",
+      "SCAN no garantiza tamaño de lote ni orden: continúa hasta cursor cero y tolera duplicados. MATCH usa patrones glob, no expresiones regulares."
+    ],
+    "ttl": "Consulta o modifica únicamente la caducidad según la operación; no altera el valor de la clave."
+  },
+  "TOUCH": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "SET guia:a valor",
+          "DEL guia:b"
+        ],
+        "commands": [
+          "TOUCH guia:a guia:b"
+        ],
+        "expected": "1",
+        "explanation": "Cuenta claves tocadas existentes; no crea las ausentes."
+      }
+    ],
+    "lab": null,
+    "notes": [
+      "TTL y PTTL devuelven −2 si la clave no existe y −1 si no tiene caducidad. EXPIRE con tiempo no positivo elimina inmediatamente.",
+      "EXPIRE/PEXPIRE/EXPIREAT/PEXPIREAT admiten NX, XX, GT y LT. NX no se combina con XX/GT/LT; GT y LT son excluyentes. Una clave sin TTL se considera infinita para GT/LT.",
+      "SCAN no garantiza tamaño de lote ni orden: continúa hasta cursor cero y tolera duplicados. MATCH usa patrones glob, no expresiones regulares."
+    ]
+  },
+  "SORT": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:numeros",
+          "RPUSH guia:numeros 3 1 2"
+        ],
+        "commands": [
+          "SORT guia:numeros DESC"
+        ],
+        "expected": "[\"3\",\"2\",\"1\"]",
+        "explanation": "La lista original no cambia si no se usa STORE."
+      }
+    ],
+    "lab": "sets",
+    "notes": [
+      "TTL y PTTL devuelven −2 si la clave no existe y −1 si no tiene caducidad. EXPIRE con tiempo no positivo elimina inmediatamente.",
+      "EXPIRE/PEXPIRE/EXPIREAT/PEXPIREAT admiten NX, XX, GT y LT. NX no se combina con XX/GT/LT; GT y LT son excluyentes. Una clave sin TTL se considera infinita para GT/LT.",
+      "SCAN no garantiza tamaño de lote ni orden: continúa hasta cursor cero y tolera duplicados. MATCH usa patrones glob, no expresiones regulares."
+    ]
+  },
+  "SORT_RO": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "DEL guia:palabras",
+          "RPUSH guia:palabras pera manzana"
+        ],
+        "commands": [
+          "SORT_RO guia:palabras ALPHA"
+        ],
+        "expected": "[\"manzana\",\"pera\"]",
+        "explanation": "ALPHA solicita orden por bytes en lugar de comparación numérica."
+      }
+    ],
+    "lab": "sets",
+    "notes": [
+      "TTL y PTTL devuelven −2 si la clave no existe y −1 si no tiene caducidad. EXPIRE con tiempo no positivo elimina inmediatamente.",
+      "EXPIRE/PEXPIRE/EXPIREAT/PEXPIREAT admiten NX, XX, GT y LT. NX no se combina con XX/GT/LT; GT y LT son excluyentes. Una clave sin TTL se considera infinita para GT/LT.",
+      "SCAN no garantiza tamaño de lote ni orden: continúa hasta cursor cero y tolera duplicados. MATCH usa patrones glob, no expresiones regulares."
+    ]
+  },
+  "MULTI": {
+    "documentation": "detailed",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "SET guia:contador 0"
+        ],
+        "commands": [
+          "MULTI",
+          "INCR guia:contador",
+          "INCR guia:contador",
+          "EXEC"
+        ],
+        "expected": "OK; QUEUED; QUEUED; [1,2]",
+        "explanation": "Los comandos se encolan y se ejecutan juntos al confirmar; Redis no ofrece rollback de errores de ejecución."
+      }
+    ],
+    "lab": null,
+    "notes": [
+      "MULTI encola operaciones y EXEC las ejecuta sin intercalado de otros clientes. Un error durante la ejecución no revierte las demás operaciones.",
+      "WATCH detecta modificaciones y caducidad antes de EXEC; si hay conflicto, devuelve nulo y la aplicación debe reintentar. Pipelining reduce viajes de red, pero no proporciona este aislamiento."
+    ]
+  },
+  "EXEC": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "SET guia:contador 0",
+          "MULTI",
+          "INCR guia:contador"
+        ],
+        "commands": [
+          "EXEC"
+        ],
+        "expected": "[1]",
+        "explanation": "La respuesta contiene un resultado por comando encolado."
+      }
+    ],
+    "lab": null,
+    "notes": [
+      "MULTI encola operaciones y EXEC las ejecuta sin intercalado de otros clientes. Un error durante la ejecución no revierte las demás operaciones.",
+      "WATCH detecta modificaciones y caducidad antes de EXEC; si hay conflicto, devuelve nulo y la aplicación debe reintentar. Pipelining reduce viajes de red, pero no proporciona este aislamiento."
+    ]
+  },
+  "DISCARD": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "SET guia:contador 0",
+          "MULTI",
+          "INCR guia:contador"
+        ],
+        "commands": [
+          "DISCARD",
+          "GET guia:contador"
+        ],
+        "expected": "OK; \"0\"",
+        "explanation": "Descartar una cola impide ejecutar sus cambios."
+      }
+    ],
+    "lab": null,
+    "notes": [
+      "MULTI encola operaciones y EXEC las ejecuta sin intercalado de otros clientes. Un error durante la ejecución no revierte las demás operaciones.",
+      "WATCH detecta modificaciones y caducidad antes de EXEC; si hay conflicto, devuelve nulo y la aplicación debe reintentar. Pipelining reduce viajes de red, pero no proporciona este aislamiento."
+    ]
+  },
+  "WATCH": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "SET guia:contador 0"
+        ],
+        "commands": [
+          "WATCH guia:contador",
+          "MULTI",
+          "INCR guia:contador",
+          "EXEC"
+        ],
+        "expected": "OK; OK; QUEUED; [1]",
+        "explanation": "Si otra conexión modifica una clave vigilada antes de EXEC, la confirmación devuelve nulo."
+      }
+    ],
+    "lab": null,
+    "notes": [
+      "MULTI encola operaciones y EXEC las ejecuta sin intercalado de otros clientes. Un error durante la ejecución no revierte las demás operaciones.",
+      "WATCH detecta modificaciones y caducidad antes de EXEC; si hay conflicto, devuelve nulo y la aplicación debe reintentar. Pipelining reduce viajes de red, pero no proporciona este aislamiento."
+    ]
+  },
+  "UNWATCH": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "SET guia:contador 0",
+          "WATCH guia:contador"
+        ],
+        "commands": [
+          "UNWATCH"
+        ],
+        "expected": "OK",
+        "explanation": "La conexión deja de detectar conflictos sobre las claves vigiladas."
+      }
+    ],
+    "lab": null,
+    "notes": [
+      "MULTI encola operaciones y EXEC las ejecuta sin intercalado de otros clientes. Un error durante la ejecución no revierte las demás operaciones.",
+      "WATCH detecta modificaciones y caducidad antes de EXEC; si hay conflicto, devuelve nulo y la aplicación debe reintentar. Pipelining reduce viajes de red, pero no proporciona este aislamiento."
+    ]
+  },
+  "PING": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [],
+        "commands": [
+          "PING",
+          "PING \"Hola Redis\""
+        ],
+        "expected": "PONG; \"Hola Redis\"",
+        "explanation": "Sin argumento se usa para comprobar actividad de la conexión."
+      }
+    ],
+    "lab": null,
+    "notes": []
+  },
+  "ECHO": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [],
+        "commands": [
+          "ECHO \"Hola Redis\""
+        ],
+        "expected": "\"Hola Redis\"",
+        "explanation": "El servidor devuelve exactamente el argumento recibido."
+      }
+    ],
+    "lab": null,
+    "notes": []
+  },
+  "TIME": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [],
+        "commands": [
+          "TIME"
+        ],
+        "expected": "Lista [segundos Unix, microsegundos]",
+        "explanation": "Los valores cambian con el reloj del servidor o del simulador."
+      }
+    ],
+    "lab": null,
+    "notes": []
+  },
+  "PUBLISH": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [],
+        "commands": [
+          "PUBLISH guia:novedades \"Pedido listo\""
+        ],
+        "expected": "Número de suscriptores que recibieron el mensaje",
+        "explanation": "Usa la conexión B para SUBSCRIBE antes de publicar desde A; sin suscriptores el resultado es cero."
+      }
+    ],
+    "lab": null,
+    "notes": [
+      "Pub/Sub entrega mensajes a suscriptores conectados y no conserva historial ni permite confirmar o reintentar. Para entrega durable estudia Streams.",
+      "Usa conexiones A y B en el laboratorio. Los canales y mensajes son locales a esta pestaña. Sharded Pub/Sub depende de un Cluster real."
+    ]
+  },
+  "SUBSCRIBE": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [],
+        "commands": [
+          "SUBSCRIBE guia:novedades"
+        ],
+        "expected": "Confirmación de suscripción",
+        "explanation": "Después publica desde la otra conexión para recibir el mensaje; no bloquees la misma conexión en un lote real."
+      }
+    ],
+    "lab": "sets",
+    "notes": [
+      "Pub/Sub entrega mensajes a suscriptores conectados y no conserva historial ni permite confirmar o reintentar. Para entrega durable estudia Streams.",
+      "Usa conexiones A y B en el laboratorio. Los canales y mensajes son locales a esta pestaña. Sharded Pub/Sub depende de un Cluster real."
+    ]
+  },
+  "UNSUBSCRIBE": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "SUBSCRIBE guia:novedades"
+        ],
+        "commands": [
+          "UNSUBSCRIBE guia:novedades"
+        ],
+        "expected": "Confirmación y cantidad de suscripciones restantes",
+        "explanation": "Dejar el canal detiene mensajes futuros."
+      }
+    ],
+    "lab": null,
+    "notes": [
+      "Pub/Sub entrega mensajes a suscriptores conectados y no conserva historial ni permite confirmar o reintentar. Para entrega durable estudia Streams.",
+      "Usa conexiones A y B en el laboratorio. Los canales y mensajes son locales a esta pestaña. Sharded Pub/Sub depende de un Cluster real."
+    ]
+  },
+  "PSUBSCRIBE": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [],
+        "commands": [
+          "PSUBSCRIBE guia:pedidos:*"
+        ],
+        "expected": "Confirmación de suscripción por patrón",
+        "explanation": "Publica desde la otra conexión en guia:pedidos:creados para recibir el mensaje."
+      }
+    ],
+    "lab": null,
+    "notes": [
+      "Pub/Sub entrega mensajes a suscriptores conectados y no conserva historial ni permite confirmar o reintentar. Para entrega durable estudia Streams.",
+      "Usa conexiones A y B en el laboratorio. Los canales y mensajes son locales a esta pestaña. Sharded Pub/Sub depende de un Cluster real."
+    ]
+  },
+  "PUNSUBSCRIBE": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [
+          "PSUBSCRIBE guia:pedidos:*"
+        ],
+        "commands": [
+          "PUNSUBSCRIBE guia:pedidos:*"
+        ],
+        "expected": "Confirmación de cancelación",
+        "explanation": "Cancela la suscripción por patrón, no una suscripción directa."
+      }
+    ],
+    "lab": null,
+    "notes": [
+      "Pub/Sub entrega mensajes a suscriptores conectados y no conserva historial ni permite confirmar o reintentar. Para entrega durable estudia Streams.",
+      "Usa conexiones A y B en el laboratorio. Los canales y mensajes son locales a esta pestaña. Sharded Pub/Sub depende de un Cluster real."
+    ]
+  },
+  "PUBSUB CHANNELS": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [],
+        "commands": [
+          "PUBSUB CHANNELS guia:*"
+        ],
+        "expected": "Canales activos que coinciden con guia:*",
+        "explanation": "Los canales sin suscriptores directos no aparecen."
+      }
+    ],
+    "lab": null,
+    "notes": [
+      "Pub/Sub entrega mensajes a suscriptores conectados y no conserva historial ni permite confirmar o reintentar. Para entrega durable estudia Streams.",
+      "Usa conexiones A y B en el laboratorio. Los canales y mensajes son locales a esta pestaña. Sharded Pub/Sub depende de un Cluster real."
+    ]
+  },
+  "PUBSUB NUMPAT": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [],
+        "commands": [
+          "PUBSUB NUMPAT"
+        ],
+        "expected": "Cantidad de patrones distintos activos",
+        "explanation": "Varias conexiones sobre el mismo patrón no incrementan el número de patrones únicos."
+      }
+    ],
+    "lab": null,
+    "notes": [
+      "Pub/Sub entrega mensajes a suscriptores conectados y no conserva historial ni permite confirmar o reintentar. Para entrega durable estudia Streams.",
+      "Usa conexiones A y B en el laboratorio. Los canales y mensajes son locales a esta pestaña. Sharded Pub/Sub depende de un Cluster real."
+    ]
+  },
+  "PUBSUB NUMSUB": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [],
+        "commands": [
+          "PUBSUB NUMSUB guia:novedades"
+        ],
+        "expected": "Par canal y cantidad de suscriptores directos",
+        "explanation": "Los suscriptores por patrón no se cuentan aquí."
+      }
+    ],
+    "lab": null,
+    "notes": [
+      "Pub/Sub entrega mensajes a suscriptores conectados y no conserva historial ni permite confirmar o reintentar. Para entrega durable estudia Streams.",
+      "Usa conexiones A y B en el laboratorio. Los canales y mensajes son locales a esta pestaña. Sharded Pub/Sub depende de un Cluster real."
+    ]
+  },
+  "DBSIZE": {
+    "documentation": "reference",
+    "examples": [
+      {
+        "title": "Demostración reproducible",
+        "setup": [],
+        "commands": [
+          "DBSIZE"
+        ],
+        "expected": "Número actual de claves de la sesión",
+        "explanation": "El valor depende de lo que hayas creado previamente."
+      }
+    ],
+    "lab": null,
+    "notes": []
+  }
+}

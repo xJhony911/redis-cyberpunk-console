@@ -1,0 +1,247 @@
+import type { CommandSchema } from './command-schema'
+import type { RedisExecutionContext } from './redis-context'
+import type { RedisCommandError } from './redis-error'
+import type { RedisResult } from './redis-result'
+import type { CompatibilityProfile, VersionGate } from './compatibility'
+import { commandTableEntry } from './compatibility/command-table'
+import { asciiLowerCase } from './ascii-case'
+
+export type CommandFlag =
+  | 'readonly'
+  | 'write'
+  | 'denyoom'
+  | 'admin'
+  | 'noscript'
+  | 'random'
+  | 'blocking'
+  | 'fast'
+  | 'movablekeys'
+  | 'transaction'
+  | 'pubsub'
+  | 'subscribed'
+  /** Served on an IMPORTING slot without ASKING (RESTORE-ASKING). */
+  | 'asking'
+
+export type CommandCapabilities = {
+  blocking?: boolean
+  pushOnly?: boolean
+  movableKeys?: boolean
+  scriptKeys?: boolean
+  /**
+   * How the command behaves under cluster mode. `'forbidden'` is rejected
+   * outright; `'multiDbOnly'` (MOVE) is rejected unless the profile models
+   * Valkey 9's cluster databases (`cluster.multi-db`), and `'singleDb'`
+   * (SELECT) only when it targets a non-zero database, with the same
+   * exemption. Each is checked when the command runs, so inside MULTI it is
+   * queued and answers at EXEC. Consumed by `ClusterPolicy` instead of
+   * matching command names.
+   */
+  clusterMode?: 'forbidden' | 'multiDbOnly' | 'singleDb'
+  /**
+   * Marks the command as a transaction boundary. `'begin'` opens a transaction
+   * (MULTI); `'end'` closes one (EXEC/DISCARD). `ClusterPolicy` uses this to
+   * reset the per-session pinned slot instead of matching command names.
+   */
+  transactionBoundary?: 'begin' | 'end'
+}
+
+export type CommandMonitorMetadata = {
+  /** Never feed MONITOR; a predicate decides per profile. */
+  skip?: boolean | ((profile: CompatibilityProfile) => boolean)
+  redactArgs?: (rawArgs: readonly Buffer[]) => readonly Buffer[]
+}
+
+/**
+ * A Redis key spec (`COMMAND INFO` / `COMMAND DOCS`). `begin_search` is the
+ * index `beginSearchIndex`, or with `beginSearchKeyword` the argument after a
+ * keyword searched for from `startFrom` (backwards from the end when
+ * negative). `find_keys` is the range `lastKey` / `keyStep` / `limit`, or with
+ * `findKeysKeynum` a count read from the argument `keyNumIdx` after the
+ * begin position, the keys starting `firstKey` after it. `beginSearchUnknown`
+ * / `findKeysUnknown` are Redis's `unknown` types (SORT's STORE destination,
+ * an `incomplete` spec): the spec cannot find its keys, so a lookup that
+ * reaches it falls back to the command's getkeys procedure. Besides COMMAND
+ * INFO, specs are how `COMMAND GETKEYS` finds keys (see `keysFromKeySpecs`).
+ */
+export type CommandKeySpec = {
+  flags: readonly string[]
+  beginSearchIndex: number
+  beginSearchKeyword?: { keyword: string; startFrom: number }
+  beginSearchUnknown?: true
+  lastKey: number
+  keyStep: number
+  limit?: number
+  findKeysKeynum?: { keyNumIdx: number; firstKey: number; keyStep: number }
+  findKeysUnknown?: true
+  notes?: string
+}
+
+export type CommandDocumentation = {
+  summary: string
+  since?: string
+  group: string
+  complexity?: string
+  arguments?: readonly CommandDocumentationArgument[]
+}
+
+export type CommandDocumentationArgument = {
+  name: string
+  type: string
+  /** Redis 7.2+ / Valkey: the argument's display name in COMMAND DOCS. */
+  displayText?: string
+  keySpecIndex?: number
+  token?: string
+  flags?: readonly string[]
+}
+
+/**
+ * `COMMAND INFO` / `COMMAND DOCS` metadata that cannot be derived from the
+ * rest of the definition (#370). Arity comes from `schema` and the legacy
+ * first/last/step key range from `keySpecs` (or, without them, from the
+ * schema's key positions) — declare `arity` only where the schema cannot
+ * express it, such as synthetic subcommand entries or a version-gated
+ * argument whose arity differs by compatibility profile.
+ *
+ * `flags`, `categories`, `tips` and `keySpecs` are for commands the real
+ * command table does not have (one added with `extraCommands`): for every
+ * other name the table captured from real servers supplies them (see
+ * `introspectionFor` and src/core/compatibility/command-table.ts).
+ */
+export type CommandIntrospection = {
+  name?: string
+  arity?: number | ((profile: CompatibilityProfile) => number)
+  flags?: readonly string[]
+  categories?: readonly string[]
+  tips?: readonly string[]
+  keySpecs?: readonly CommandKeySpec[]
+  subcommands?: readonly CommandIntrospection[]
+  docs?: CommandDocumentation
+  /**
+   * The fields that differ on some profiles, merged over the rest when it
+   * returns them (see `introspectionFor`): XINFO's 6.2 key range, say, or
+   * the docs summaries Redis 7.2 rewrote.
+   */
+  forProfile?: (
+    profile: CompatibilityProfile,
+  ) => Omit<CommandIntrospection, 'forProfile' | 'name'> | undefined
+}
+
+/**
+ * The command-table entry `name` (`container|subcommand` for a subcommand)
+ * has on `profile`: `introspection` with its `forProfile` merged over it,
+ * then the flags, ACL categories, tips and key specs the real command table
+ * of that version gives `name` (`commandTableEntry`), which win over declared
+ * ones. A name the real table does not have (a command added with
+ * `extraCommands`) keeps what it declares. Redis 6.2 has no tips or key specs,
+ * so there the declared key specs stay; they only feed the legacy key range.
+ */
+export function introspectionFor(
+  introspection: CommandIntrospection | undefined,
+  profile: CompatibilityProfile,
+  name: string,
+): CommandIntrospection | undefined {
+  const override = introspection?.forProfile?.(profile)
+  const declared = override ? { ...introspection, ...override } : introspection
+  const real = commandTableEntry(name, profile)
+  if (!real) {
+    return declared
+  }
+
+  const extended = profile.has('command.info-extended-fields')
+  return {
+    ...declared,
+    flags: real.flags,
+    categories: real.categories,
+    tips: real.tips ?? [],
+    keySpecs: extended ? (real.keySpecs ?? []) : declared?.keySpecs,
+  }
+}
+
+export type CommandExecutionResult = RedisResult | Promise<RedisResult>
+
+/**
+ * A key a command names, with its access flags (`RO`, `OW`, `access`,
+ * `update`, ...) as `COMMAND GETKEYSANDFLAGS` reports them: from the key spec
+ * that found it, or from the command's getkeys procedure.
+ */
+export type KeyWithFlags = { key: Buffer; flags: readonly string[] }
+
+export interface CommandDefinition<TArgs = unknown> {
+  readonly name: string
+  readonly since?: VersionGate
+  /**
+   * The first version that no longer has the command (STRALGO, which Redis
+   * 7.0 replaced with LCS): registered only where this gate is not met.
+   */
+  readonly until?: VersionGate
+  readonly schema: CommandSchema<TArgs>
+  readonly flags: readonly CommandFlag[]
+  readonly capabilities?: CommandCapabilities
+  readonly monitor?: CommandMonitorMetadata
+  readonly introspection?: CommandIntrospection
+  keys(args: TArgs): readonly Buffer[]
+  /**
+   * Redis's getkeys proc: the keys in a raw `argv` (command name at index 0)
+   * without parsing it, each with the flags the proc gives it (none, for
+   * most). Consulted to route a command queued inside MULTI whose own parser
+   * failed (without one, the legacy first/last/step range `COMMAND INFO`
+   * reports is used, as Redis does), and by `COMMAND GETKEYS` /
+   * `GETKEYSANDFLAGS` when the key specs cannot answer. `profile` is for a
+   * proc that changed between versions (MIGRATE's, rewritten in 7.0).
+   */
+  rawKeys?(
+    argv: readonly Buffer[],
+    profile: CompatibilityProfile,
+  ): readonly KeyWithFlags[]
+  execute(args: TArgs, ctx: RedisExecutionContext): CommandExecutionResult
+}
+
+type CommandPlanBase<TArgs> = {
+  definition: CommandDefinition<TArgs>
+  keys: readonly Buffer[]
+  rawCommand: Buffer
+  rawArgs: readonly Buffer[]
+}
+
+/**
+ * A resolved command, ready to run: its definition, parsed `args` and routing
+ * `keys`. A command queued inside MULTI whose own argument parsing failed is
+ * the second form: no `args`, and `deferredError` set to the error its EXEC
+ * slot answers, raised after the policy chain; its `keys` come from the
+ * command's getkeys proc or legacy key range over `rawArgs`. A policy that
+ * reads `args` narrows on `deferredError` first.
+ */
+export type CommandPlan<TArgs = unknown> =
+  | (CommandPlanBase<TArgs> & { args: TArgs; deferredError?: undefined })
+  | (CommandPlanBase<TArgs> & {
+      args?: undefined
+      deferredError: RedisCommandError
+    })
+
+/**
+ * Builds a command definition, pinning `TArgs` from the schema so `keys` and
+ * `execute` get their arguments typed without a manual annotation, and
+ * lowercasing the declared name.
+ *
+ * It returns a **copy**. That is unobservable for the idiomatic literal form —
+ * `export const getCommand = defineCommand({ ... })`, where nothing else ever
+ * held the argument — but it is not unobservable in general:
+ *
+ *  - a definition you already hold a reference to comes back as a *different*
+ *    object, so metadata keyed off the one you authored will not match the one
+ *    that ends up registered;
+ *  - a class instance loses the `keys`/`execute` that live on its prototype,
+ *    because a spread copies own enumerable properties only. This type-checks —
+ *    `CommandDefinition` is an interface — and fails at the first invocation.
+ *
+ * Register those with {@link CommandRegistry.register} directly: it stores by
+ * reference, at the cost of leaving the name's casing alone.
+ */
+export function defineCommand<TArgs>(
+  definition: CommandDefinition<TArgs>,
+): CommandDefinition<TArgs> {
+  return {
+    ...definition,
+    name: asciiLowerCase(definition.name),
+  }
+}

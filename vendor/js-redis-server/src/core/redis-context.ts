@@ -1,0 +1,270 @@
+import type { RedisClusterNodeRole } from '../state/cluster-topology'
+import type { RedisDatabase } from '../state/database'
+import type { RedisMonitorCommandEvent } from '../state/monitor-feed'
+import type { RedisServerState } from '../state/server-state'
+import type { CommandExecutor } from './command-executor'
+import type { CommandPlan } from './command-definition'
+import type { RedisResult } from './redis-result'
+import type { RespVersion } from './resp-encoder'
+
+export type ParkRequest<TValue> = {
+  waitFor: Promise<TValue | null>
+  /**
+   * Optional synchronous view of a wake: registers a listener the command
+   * calls in the same tick it settles `waitFor` because of a write. A
+   * turn-aware park handler uses it to queue the resume while the writer still
+   * holds the turn, so no command queued behind the writer can run first. A
+   * wake is only a hint: the command re-checks its keys once resumed.
+   */
+  onWake?: (listener: () => void) => void
+  timeoutMs?: number
+  signal: AbortSignal
+}
+
+export type ParkHandler = <TValue>(
+  request: ParkRequest<TValue>,
+) => Promise<TValue | null>
+
+export type ClientSessionMode = 'normal' | 'transaction' | 'subscribed'
+
+/**
+ * The three independent pub/sub registries a session can hold subscriptions in:
+ * plain channels (`SUBSCRIBE`), shard channels (`SSUBSCRIBE`) and glob patterns
+ * (`PSUBSCRIBE`).
+ */
+export type PubSubKind = 'channel' | 'shard' | 'pattern'
+
+export type RedisMonitorContext = {
+  readonly disabled?: boolean
+  readonly defer?: boolean
+  readonly clientAddress?: string
+  readonly deferredEvents?: RedisMonitorCommandEvent[]
+}
+
+export interface RedisClientSession {
+  readonly id: string
+  readonly clientAddress?: string
+  readonly connectedAtMs: number
+  readonly selectedDatabase: number
+  readonly mode: ClientSessionMode
+  readonly protocolVersion: RespVersion
+  readonly usesSubscribedReplyMode: boolean
+  readonly clusterReadOnly: boolean
+  /** Set by ASKING; cleared after the next command (see ClientSession). */
+  readonly clusterAsking: boolean
+  readonly isAuthenticated: boolean
+  setAuthenticated(value: boolean): void
+  setProtocolVersion(version: RespVersion): void
+  setClusterReadOnly(value: boolean): void
+  setClusterAsking(value: boolean): void
+  selectDatabase(database: number): void
+  beginTransaction(): void
+  queueTransaction(plan: CommandPlan): void
+  drainTransaction(): CommandPlan[]
+  discardTransaction(): void
+  markTransactionDirty(): void
+  isTransactionDirty(): boolean
+  executeTransaction(plans: readonly CommandPlan[]): Promise<RedisResult>
+  watch(keys: readonly Buffer[]): void
+  unwatch(): void
+  isWatchDirty(): boolean
+  readonly pubsubChannelCount: number
+  readonly pubsubShardChannelCount: number
+  readonly pubsubPatternCount: number
+  readonly pubsubSubscriptionCount: number
+  pubsubSubscribe(kind: PubSubKind, targets: readonly Buffer[]): RedisResult[]
+  pubsubUnsubscribe(kind: PubSubKind, targets: readonly Buffer[]): RedisResult[]
+  resetPubSub(): void
+  deferPushesUntilAfterReply(): () => void
+  /**
+   * Queue a push for this connection. `beforeReply` skips every hold, so a
+   * push made while this connection's own command runs goes out before its
+   * reply.
+   */
+  enqueuePush(result: RedisResult, beforeReply?: boolean): void
+  onReset(cleanup: () => void): () => void
+  resetPushProducers(): void
+  readonly monitoring: boolean
+  startMonitor(frame: (event: RedisMonitorCommandEvent) => RedisResult): void
+  disconnect(reason?: string): void
+  // What CLIENT LIST / CLIENT INFO report beyond the fields above.
+  /**
+   * The server's end of the connection, `host:port` (`laddr=`); absent on a
+   * connection with no address (CLIENT LIST then prints `addr`'s).
+   */
+  readonly localAddress?: string
+  /**
+   * The socket's file descriptor (`fd=`); absent without one (the in-process
+   * wire), which CLIENT LIST prints as `-1`, Redis's own spelling.
+   */
+  readonly fd?: number
+  /**
+   * The command-table name of the last command the client sent (`cmd=`):
+   * `container|subcommand` once lookup resolves subcommands (7.0+), `null`
+   * before the first command or after one lookup did not find.
+   */
+  readonly lastCommand: string | null
+  /** When the client last sent a command or got its reply (`idle=`). */
+  readonly lastInteractionMs: number
+  /**
+   * Commands queued since MULTI, still counted while EXEC runs them
+   * (`multi=`; `-1` outside a transaction).
+   */
+  readonly queuedCommandCount: number
+  /**
+   * CLIENT INFO's `multi=`: {@link queuedCommandCount}, except `0` on Valkey
+   * 8.1+ for a client whose MULTI or WATCH allocated the multi state
+   * (`client.info-multi-lazy-state`).
+   */
+  readonly clientInfoMultiCount: number
+  /** Keys under WATCH (`watch=`). */
+  readonly watchedKeyCount: number
+}
+
+/**
+ * The slot a running script keeps to: its declared keys' slot, else the
+ * first slot one of its commands touched, `null` until then. Redis keeps it
+ * on the calling client (`original_c->slot`).
+ */
+export type ScriptSlotPin = { slot: number | null }
+
+/**
+ * The database a running script has selected (#566). Real Redis runs a
+ * script's commands on its own client, which starts each run on the caller's
+ * database, so a SELECT inside the script moves only the script's later
+ * commands, never the caller. `selected` is `null` until the script's first
+ * SELECT, meaning the caller's database.
+ */
+export type ScriptDatabase = { selected: number | null }
+
+export interface RedisExecutionContext {
+  readonly db: RedisDatabase
+  readonly server: RedisServerState
+  readonly session: RedisClientSession
+  readonly executor: CommandExecutor
+  readonly transactionReplay?: boolean
+  /**
+   * Set while the command runs inside a Lua script (`redis.call`/`pcall`),
+   * mirroring real Redis' `CLIENT_SCRIPT` flag. Commands whose reply must be
+   * reproducible across replicas — `SORT` over a set, today — branch on it.
+   */
+  readonly inScript?: boolean
+  /**
+   * Set on a cluster node while a script that must keep to one slot runs
+   * (Redis 7.0+: a shebang script or a function, unless it declares
+   * `allow-cross-slot-keys`). The cluster policy refuses a command whose
+   * keys hash to another slot than the pin's, and pins the first slot a
+   * command touches when the script declared no keys.
+   */
+  readonly scriptSlot?: ScriptSlotPin
+  /**
+   * Set while the command runs inside a Lua script: the database the script
+   * has selected. SELECT changes it instead of the session's (#566).
+   */
+  readonly scriptDatabase?: ScriptDatabase
+  /**
+   * Set while the command runs inside a Lua script: the keys the script
+   * command (EVAL, EVALSHA, FCALL, ...) declared. Before Redis 7.2 a tracking
+   * client remembers these, not the inner command's keys (#252).
+   */
+  readonly scriptKeys?: readonly Buffer[]
+  readonly nodeRole?: RedisClusterNodeRole
+  readonly monitor?: RedisMonitorContext
+  readonly signal: AbortSignal
+  park: ParkHandler
+}
+
+export function createDefaultParkHandler(): ParkHandler {
+  return request =>
+    new Promise((resolve, reject) => {
+      if (request.signal.aborted) {
+        reject(createAbortError())
+        return
+      }
+
+      let settled = false
+      let timer: NodeJS.Timeout | undefined
+
+      const cleanup = () => {
+        if (timer) {
+          clearTimeout(timer)
+        }
+        request.signal.removeEventListener('abort', onAbort)
+      }
+
+      const settle = (callback: () => void) => {
+        if (settled) return
+        settled = true
+        cleanup()
+        callback()
+      }
+
+      const onAbort = () => {
+        settle(() => reject(createAbortError()))
+      }
+
+      request.signal.addEventListener('abort', onAbort, { once: true })
+
+      if (request.timeoutMs !== undefined) {
+        timer = setTimeout(() => {
+          settle(() => resolve(null))
+        }, request.timeoutMs)
+      }
+
+      request.waitFor.then(
+        value => settle(() => resolve(value)),
+        err => settle(() => reject(err)),
+      )
+    })
+}
+
+/**
+ * Park handler for commands replayed inside MULTI/EXEC.
+ *
+ * Blocking commands (BLPOP, BLMOVE, BLMPOP, BZMPOP, XREAD BLOCK, ...) must not
+ * actually block here: real Redis runs them non-blocking inside a transaction
+ * and returns the immediate "nothing happened" result (e.g. BLPOP -> nil). This
+ * resolves `null` straight away — the same timeout sentinel a real park returns
+ * on expiry — so the command takes its non-blocking branch and its `finally`
+ * cleanup (wakeup-subscription teardown) runs.
+ *
+ * Unlike a bare `async () => null`, it still *honors* the park request:
+ *  - it attaches a no-op handler to `request.waitFor`, so a command whose wait
+ *    rejects never surfaces an unhandled promise rejection (mirrors
+ *    {@link createDefaultParkHandler}, which consumes `waitFor`);
+ *  - it rejects with an AbortError if the session signal is already aborted, so
+ *    a transaction aborted mid-EXEC propagates immediately instead of swallowing
+ *    the abort.
+ *
+ * Commands MUST release any wakeup subscription in a `finally` around
+ * `ctx.park(...)`, never by chaining off `waitFor` — a non-blocking park may
+ * resolve without `waitFor` ever settling.
+ */
+export function createNonBlockingParkHandler(): ParkHandler {
+  return request => {
+    // Consume waitFor; we never await its value but a rejection must not leak.
+    request.waitFor.catch(() => {})
+
+    if (request.signal.aborted) {
+      return Promise.reject(createAbortError())
+    }
+
+    return Promise.resolve(null)
+  }
+}
+
+/**
+ * Deterministic `AbortError` for the park handlers: a parked command sees this
+ * however the session was aborted, so `controller.abort('bye')` cannot surface
+ * a bare string out of `ctx.park(...)`.
+ *
+ * `ClientSession` instead uses `signal.throwIfAborted()`, which rethrows
+ * `signal.reason` verbatim — that path yields an `AbortError` only for the
+ * default abort. No message is matched on anywhere; `name === 'AbortError'` is
+ * the only assertion in the tree.
+ */
+function createAbortError(): Error {
+  const err = new Error('The operation was aborted')
+  err.name = 'AbortError'
+  return err
+}
