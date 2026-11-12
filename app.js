@@ -237,6 +237,27 @@
         osc.stop(now + 0.45);
       } catch (e) { /* ignore */ }
     }
+
+    // Theme Switch: Harmonic dual crystalline chime
+    playThemeSwitch() {
+      if (!this.enabled) return;
+      this.init();
+      try {
+        const now = this.ctx.currentTime;
+        [520, 780, 1040, 1560].forEach((freq, idx) => {
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(freq, now + idx * 0.035);
+          gain.gain.setValueAtTime(0.035, now + idx * 0.035);
+          gain.gain.exponentialRampToValueAtTime(0.0001, now + idx * 0.035 + 0.12);
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start(now + idx * 0.035);
+          osc.stop(now + idx * 0.035 + 0.12);
+        });
+      } catch (e) { /* ignore */ }
+    }
   }
 
   const audio = new CyberAudioEngine();
@@ -1108,6 +1129,16 @@
   const soundLabel = document.getElementById('sound-label');
   const btnSeedData = document.getElementById('btn-seed-data');
   const btnFlushAll = document.getElementById('btn-flush-all');
+  const btnThemeToggle = document.getElementById('btn-theme-toggle');
+  const themeLabel = document.getElementById('theme-label');
+  const btnExportVault = document.getElementById('btn-export-vault');
+
+  const suggestionBar = document.getElementById('terminal-suggestion-bar');
+  const suggestionBadge = document.getElementById('suggestion-badge');
+  const suggestionCmd = document.getElementById('suggestion-cmd');
+  const suggestionSyntax = document.getElementById('suggestion-syntax');
+  const suggestionDesc = document.getElementById('suggestion-desc');
+  const btnApplySuggestion = document.getElementById('btn-apply-suggestion');
 
   const vaultCardsContainer = document.getElementById('vault-cards-container');
   const vaultSearchInput = document.getElementById('vault-search-input');
@@ -1177,6 +1208,19 @@
     return div.innerHTML;
   }
 
+  function highlightMatch(text, query) {
+    const raw = String(text ?? '');
+    if (!query) return escapeHtml(raw);
+    const escapedText = escapeHtml(raw);
+    const escapedQuery = escapeHtml(query).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    try {
+      const regex = new RegExp(`(${escapedQuery})`, 'gi');
+      return escapedText.replace(regex, '<mark class="neon-match">$1</mark>');
+    } catch (e) {
+      return escapedText;
+    }
+  }
+
   // --------------------------------------------------------------------------
   // Execute Command from Input
   // --------------------------------------------------------------------------
@@ -1217,6 +1261,7 @@
     updateHUDStats();
     if (fromInteractive) {
       termInput.value = '';
+      updateSyntaxSuggestion();
     }
   }
 
@@ -1303,12 +1348,20 @@
       // Header
       const header = document.createElement('div');
       header.className = 'card-header-line';
+
+      let inspectCmd = `GET ${key}`;
+      if (item.type === 'hash') inspectCmd = `HGETALL ${key}`;
+      else if (item.type === 'list') inspectCmd = `LRANGE ${key} 0 -1`;
+      else if (item.type === 'set') inspectCmd = `SMEMBERS ${key}`;
+      else if (item.type === 'zset') inspectCmd = `ZRANGE ${key} 0 -1 WITHSCORES`;
+
       header.innerHTML = `
         <div class="card-title-group">
           <span class="card-type-tag">${item.type}</span>
-          <span class="card-key-name" title="${escapeHtml(key)}">${escapeHtml(key)}</span>
+          <span class="card-key-name clickable" title="Clic para consultar: ${escapeHtml(inspectCmd)}">${highlightMatch(key, query)}</span>
         </div>
         <div class="card-actions-group">
+          <button class="card-btn-query" title="Inspeccionar clave en la terminal">&#9654; GET</button>
           ${item.ttl !== null ? `<span class="card-size-tag text-neon-yellow">TTL: ${item.ttl}s</span>` : ''}
           <button class="card-btn-del" title="Eliminar clave (DEL ${escapeHtml(key)})">&times;</button>
         </div>
@@ -1319,33 +1372,33 @@
       body.className = 'card-content-body';
 
       if (item.type === 'string') {
-        body.innerHTML = `<div class="val-string">"${escapeHtml(String(item.value))}"</div>`;
+        body.innerHTML = `<div class="val-string">"${highlightMatch(String(item.value), query)}"</div>`;
       } else if (item.type === 'hash') {
         let tableRows = '';
         for (let f in item.value) {
           tableRows += `
             <tr class="hash-row">
-              <td class="hash-key">${escapeHtml(f)}</td>
-              <td class="hash-val">${escapeHtml(String(item.value[f]))}</td>
+              <td class="hash-key">${highlightMatch(f, query)}</td>
+              <td class="hash-val">${highlightMatch(String(item.value[f]), query)}</td>
             </tr>
           `;
         }
         body.innerHTML = `<table class="hash-fields-table"><tbody>${tableRows || '<tr><td colspan="2" class="text-dim">(vacío)</td></tr>'}</tbody></table>`;
       } else if (item.type === 'list') {
         let nodes = item.value.map((v, i) => `
-          <span class="list-node"><span class="node-idx">[${i}]</span> ${escapeHtml(v)}</span>
+          <span class="list-node"><span class="node-idx">[${i}]</span> ${highlightMatch(v, query)}</span>
           ${i < item.value.length - 1 ? '<span class="list-arrow">&rarr;</span>' : ''}
         `).join('');
         body.innerHTML = `<div class="list-pipeline">${nodes || '<span class="text-dim">(lista vacía)</span>'}</div>`;
       } else if (item.type === 'set') {
         let pills = Array.from(item.value).map(v => `
-          <span class="set-pill">${escapeHtml(v)}</span>
+          <span class="set-pill">${highlightMatch(v, query)}</span>
         `).join('');
         body.innerHTML = `<div class="set-cluster">${pills || '<span class="text-dim">(set vacío)</span>'}</div>`;
       } else if (item.type === 'zset') {
         let rows = item.value.map(v => `
           <div class="zset-item">
-            <span class="zset-member">${escapeHtml(v.member)}</span>
+            <span class="zset-member">${highlightMatch(v.member, query)}</span>
             <span class="zset-score">${v.score}</span>
           </div>
         `).join('');
@@ -1354,6 +1407,22 @@
 
       card.appendChild(header);
       card.appendChild(body);
+
+      // Attach header click actions
+      const keyNameEl = header.querySelector('.card-key-name');
+      if (keyNameEl) {
+        keyNameEl.addEventListener('click', () => {
+          injectExample(inspectCmd);
+        });
+      }
+
+      const queryBtn = header.querySelector('.card-btn-query');
+      if (queryBtn) {
+        queryBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          injectExample(inspectCmd);
+        });
+      }
 
       // Attach delete click
       const delBtn = card.querySelector('.card-btn-del');
@@ -1447,23 +1516,138 @@
       }
     } else if (e.key === 'Tab') {
       e.preventDefault();
-      autoCompleteCommand();
+      if (currentSuggestion && !termInput.value.trim().includes(' ')) {
+        applyActiveSuggestion();
+      } else {
+        autoCompleteCommand();
+      }
     }
   });
 
+  // --------------------------------------------------------------------------
+  // Command Dictionary & Live Syntax Suggestions
+  // --------------------------------------------------------------------------
+  const COMMAND_DICTIONARY = [
+    // Strings
+    { name: 'SET', cat: 'string', syntax: 'SET key value [EX seg] [NX]', desc: 'Guarda una clave con su valor de texto.' },
+    { name: 'GET', cat: 'string', syntax: 'GET key', desc: 'Devuelve el valor en texto de la clave solicitada.' },
+    { name: 'SETNX', cat: 'string', syntax: 'SETNX key value', desc: 'Guarda SOLO si la clave no existe aún en memoria.' },
+    { name: 'INCR', cat: 'string', syntax: 'INCR key', desc: 'Incrementa atómicamente un número entero en +1.' },
+    { name: 'DECR', cat: 'string', syntax: 'DECR key', desc: 'Decrementa atómicamente un número entero en -1.' },
+    { name: 'INCRBY', cat: 'string', syntax: 'INCRBY key increment', desc: 'Incrementa un número entero por una cantidad dada.' },
+    { name: 'APPEND', cat: 'string', syntax: 'APPEND key value', desc: 'Concatena texto al final del valor existente.' },
+    { name: 'STRLEN', cat: 'string', syntax: 'STRLEN key', desc: 'Devuelve la longitud en caracteres de la cadena.' },
+    { name: 'MSET', cat: 'string', syntax: 'MSET k1 v1 [k2 v2 ...]', desc: 'Guarda múltiples pares clave-valor a la vez.' },
+    { name: 'MGET', cat: 'string', syntax: 'MGET k1 [k2 ...]', desc: 'Obtiene el valor de múltiples claves simultáneamente.' },
+
+    // Hashes
+    { name: 'HSET', cat: 'hash', syntax: 'HSET key field value [f2 v2 ...]', desc: 'Asigna uno o más campos y valores en un Hash.' },
+    { name: 'HGET', cat: 'hash', syntax: 'HGET key field', desc: 'Obtiene el valor del campo especificado dentro del Hash.' },
+    { name: 'HGETALL', cat: 'hash', syntax: 'HGETALL key', desc: 'Devuelve todos los campos y valores contenidos en el Hash.' },
+    { name: 'HDEL', cat: 'hash', syntax: 'HDEL key field [f2 ...]', desc: 'Elimina uno o más campos específicos de un Hash.' },
+    { name: 'HEXISTS', cat: 'hash', syntax: 'HEXISTS key field', desc: 'Verifica si un campo específico existe en el Hash.' },
+    { name: 'HKEYS', cat: 'hash', syntax: 'HKEYS key', desc: 'Devuelve todos los nombres de campos del Hash.' },
+    { name: 'HVALS', cat: 'hash', syntax: 'HVALS key', desc: 'Devuelve todos los valores de campos del Hash.' },
+    { name: 'HLEN', cat: 'hash', syntax: 'HLEN key', desc: 'Devuelve la cantidad de campos dentro del Hash.' },
+    { name: 'HINCRBY', cat: 'hash', syntax: 'HINCRBY key field increment', desc: 'Incrementa el número de un campo de Hash.' },
+
+    // Lists
+    { name: 'LPUSH', cat: 'list', syntax: 'LPUSH key element [elem2 ...]', desc: 'Inserta elementos al INICIO (cabeza) de la lista.' },
+    { name: 'RPUSH', cat: 'list', syntax: 'RPUSH key element [elem2 ...]', desc: 'Inserta elementos al FINAL (cola) de la lista.' },
+    { name: 'LPOP', cat: 'list', syntax: 'LPOP key [count]', desc: 'Extrae y elimina el primer elemento de la lista.' },
+    { name: 'RPOP', cat: 'list', syntax: 'RPOP key [count]', desc: 'Extrae y elimina el último elemento de la cola de la lista.' },
+    { name: 'LRANGE', cat: 'list', syntax: 'LRANGE key start stop', desc: 'Obtiene rango de elementos (ej. 0 -1 para todos).' },
+    { name: 'LLEN', cat: 'list', syntax: 'LLEN key', desc: 'Devuelve la cantidad total de elementos en la lista.' },
+    { name: 'LSET', cat: 'list', syntax: 'LSET key index value', desc: 'Modifica el valor en un índice específico de la lista.' },
+    { name: 'LREM', cat: 'list', syntax: 'LREM key count element', desc: 'Elimina ocurrencias del elemento en la lista.' },
+
+    // Sets
+    { name: 'SADD', cat: 'set', syntax: 'SADD key member [mem2 ...]', desc: 'Agrega uno o varios miembros únicos al conjunto.' },
+    { name: 'SMEMBERS', cat: 'set', syntax: 'SMEMBERS key', desc: 'Devuelve todos los miembros únicos del conjunto.' },
+    { name: 'SREM', cat: 'set', syntax: 'SREM key member [mem2 ...]', desc: 'Elimina uno o más miembros específicos del Set.' },
+    { name: 'SISMEMBER', cat: 'set', syntax: 'SISMEMBER key member', desc: 'Comprueba con O(1) si un valor pertenece al Set.' },
+    { name: 'SCARD', cat: 'set', syntax: 'SCARD key', desc: 'Devuelve el número total de miembros del Set.' },
+    { name: 'SUNION', cat: 'set', syntax: 'SUNION key1 [key2 ...]', desc: 'Calcula y devuelve la unión de múltiples Sets.' },
+    { name: 'SINTER', cat: 'set', syntax: 'SINTER key1 [key2 ...]', desc: 'Devuelve la intersección común entre Sets.' },
+    { name: 'SDIFF', cat: 'set', syntax: 'SDIFF key1 [key2 ...]', desc: 'Devuelve la diferencia entre conjuntos.' },
+
+    // Sorted Sets
+    { name: 'ZADD', cat: 'zset', syntax: 'ZADD key score member [s2 m2 ...]', desc: 'Inserta miembros ordenados automáticamente por score.' },
+    { name: 'ZRANGE', cat: 'zset', syntax: 'ZRANGE key start stop [WITHSCORES]', desc: 'Devuelve elementos ordenados de menor a mayor score.' },
+    { name: 'ZREVRANGE', cat: 'zset', syntax: 'ZREVRANGE key start stop [WITHSCORES]', desc: 'Devuelve elementos ordenados de mayor a menor score.' },
+    { name: 'ZREM', cat: 'zset', syntax: 'ZREM key member [mem2 ...]', desc: 'Elimina miembros del Sorted Set.' },
+    { name: 'ZSCORE', cat: 'zset', syntax: 'ZSCORE key member', desc: 'Devuelve el puntaje asignado a un miembro.' },
+    { name: 'ZRANK', cat: 'zset', syntax: 'ZRANK key member', desc: 'Devuelve la posición ordinal del miembro en el ranking.' },
+    { name: 'ZCARD', cat: 'zset', syntax: 'ZCARD key', desc: 'Devuelve el número total de miembros en el Sorted Set.' },
+    { name: 'ZINCRBY', cat: 'zset', syntax: 'ZINCRBY key increment member', desc: 'Incrementa el puntaje de un miembro en el Sorted Set.' },
+    { name: 'ZRANGEBYSCORE', cat: 'zset', syntax: 'ZRANGEBYSCORE key min max [LIMIT off cnt]', desc: 'Filtra miembros en un rango numérico de puntajes.' },
+
+    // General & Diagnostics
+    { name: 'DEL', cat: 'general', syntax: 'DEL key [key2 ...]', desc: 'Elimina una o más claves de la memoria física RAM.' },
+    { name: 'EXISTS', cat: 'general', syntax: 'EXISTS key [key2 ...]', desc: 'Comprueba si una o más claves existen en el Vault.' },
+    { name: 'KEYS', cat: 'general', syntax: 'KEYS pattern', desc: 'Busca todas las claves que coincidan (ej. KEYS *).' },
+    { name: 'TYPE', cat: 'general', syntax: 'TYPE key', desc: 'Devuelve el tipo de dato asignado a la clave.' },
+    { name: 'EXPIRE', cat: 'general', syntax: 'EXPIRE key seconds', desc: 'Configura tiempo de vida (TTL) en segundos.' },
+    { name: 'TTL', cat: 'general', syntax: 'TTL key', desc: 'Devuelve los segundos restantes antes de que la clave expire.' },
+    { name: 'FLUSHALL', cat: 'general', syntax: 'FLUSHALL', desc: 'Purga y borra absolutamente TODA la memoria RAM.' },
+    { name: 'CLEAR', cat: 'general', syntax: 'CLEAR (Ctrl+L)', desc: 'Limpia el visor de registros de la terminal.' },
+    { name: 'HELP', cat: 'general', syntax: 'HELP [comando]', desc: 'Muestra el manual de ayuda interactivo.' },
+    { name: 'INFO', cat: 'general', syntax: 'INFO', desc: 'Muestra estadísticas de memoria y comandos.' },
+    { name: 'PING', cat: 'general', syntax: 'PING [mensaje]', desc: 'Prueba la conexión (responde PONG).' }
+  ];
+
+  let currentSuggestion = null;
+
+  function updateSyntaxSuggestion() {
+    if (!suggestionBar) return;
+    const raw = termInput.value.trim();
+    if (!raw) {
+      suggestionBar.style.display = 'none';
+      currentSuggestion = null;
+      return;
+    }
+
+    const firstWord = raw.split(/\s+/)[0].toUpperCase();
+    const match = COMMAND_DICTIONARY.find(c => c.name === firstWord)
+               || COMMAND_DICTIONARY.find(c => c.name.startsWith(firstWord));
+
+    if (match) {
+      currentSuggestion = match;
+      if (suggestionBadge) {
+        suggestionBadge.textContent = match.cat.toUpperCase();
+        suggestionBadge.className = `suggestion-badge badge-${match.cat}`;
+      }
+      if (suggestionCmd) suggestionCmd.textContent = match.name;
+      if (suggestionSyntax) suggestionSyntax.textContent = match.syntax;
+      if (suggestionDesc) suggestionDesc.textContent = match.desc;
+      suggestionBar.style.display = 'flex';
+    } else {
+      suggestionBar.style.display = 'none';
+      currentSuggestion = null;
+    }
+  }
+
+  function applyActiveSuggestion() {
+    if (currentSuggestion) {
+      termInput.value = currentSuggestion.name + ' ';
+      updateSyntaxSuggestion();
+      termInput.focus();
+      audio.playKeypress();
+    }
+  }
+
+  if (btnApplySuggestion) {
+    btnApplySuggestion.addEventListener('click', applyActiveSuggestion);
+  }
+
+  termInput.addEventListener('input', updateSyntaxSuggestion);
+
   function autoCompleteCommand() {
     const val = termInput.value.trim().toUpperCase();
-    const common = [
-      'SET', 'GET', 'DEL', 'KEYS *', 'INCR', 'DECR',
-      'HSET', 'HGET', 'HGETALL', 'HDEL', 'HINCRBY',
-      'LPUSH', 'RPUSH', 'LPOP', 'RPOP', 'LRANGE', 'LLEN',
-      'SADD', 'SMEMBERS', 'SREM', 'SISMEMBER', 'SUNION', 'SINTER',
-      'ZADD', 'ZRANGE', 'ZREVRANGE', 'ZSCORE', 'ZRANK',
-      'EXPIRE', 'TTL', 'FLUSHALL', 'CLEAR', 'HELP', 'INFO', 'PING'
-    ];
-    const match = common.find(c => c.startsWith(val));
+    const match = COMMAND_DICTIONARY.find(c => c.name.startsWith(val));
     if (match) {
-      termInput.value = match + ' ';
+      termInput.value = match.name + ' ';
+      updateSyntaxSuggestion();
     }
   }
 
@@ -1476,6 +1660,106 @@
     audio.playExecute();
     termLogs.innerHTML = '';
   });
+
+  // Hotkey Ctrl+L / Cmd+L to clear terminal
+  window.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'l' || e.key === 'L')) {
+      e.preventDefault();
+      audio.playExecute();
+      termLogs.innerHTML = '';
+    }
+  });
+
+  // --------------------------------------------------------------------------
+  // Theme Management (Cyberpunk HUD vs Neon Dark Minimalista)
+  // --------------------------------------------------------------------------
+  let currentTheme = localStorage.getItem('neon_core_theme') || 'cyberpunk';
+
+  function applyTheme(theme, playSound = false) {
+    currentTheme = theme;
+    localStorage.setItem('neon_core_theme', theme);
+
+    if (theme === 'minimal') {
+      document.body.classList.remove('theme-cyberpunk');
+      document.body.classList.add('theme-minimal');
+      if (themeLabel) themeLabel.textContent = '✦ TEMA: NEON MINIMAL';
+      if (btnThemeToggle) {
+        btnThemeToggle.querySelector('.btn-icon').textContent = '✦';
+        btnThemeToggle.classList.add('btn-theme-active');
+      }
+    } else {
+      document.body.classList.remove('theme-minimal');
+      document.body.classList.add('theme-cyberpunk');
+      if (themeLabel) themeLabel.textContent = '⚡ TEMA: CYBERPUNK';
+      if (btnThemeToggle) {
+        btnThemeToggle.querySelector('.btn-icon').textContent = '⚡';
+        btnThemeToggle.classList.remove('btn-theme-active');
+      }
+    }
+
+    if (playSound) {
+      audio.playThemeSwitch();
+    }
+  }
+
+  if (btnThemeToggle) {
+    btnThemeToggle.addEventListener('click', () => {
+      const nextTheme = currentTheme === 'cyberpunk' ? 'minimal' : 'cyberpunk';
+      applyTheme(nextTheme, true);
+    });
+  }
+
+  // Initial Theme Load
+  applyTheme(currentTheme, false);
+
+  // --------------------------------------------------------------------------
+  // Data-Vault Export (JSON & Redis Backup)
+  // --------------------------------------------------------------------------
+  function exportVaultData() {
+    const store = engine.store;
+    if (store.size === 0) {
+      audio.playError();
+      alert('El Data-Vault está vacío. No hay claves que exportar.');
+      return;
+    }
+
+    const exportObj = {
+      system: 'REDIS_NEON_CORE',
+      version: '2.0',
+      exported_at: new Date().toISOString(),
+      keys_count: store.size,
+      keys: {}
+    };
+
+    for (let [k, item] of store.entries()) {
+      exportObj.keys[k] = {
+        type: item.type,
+        ttl: item.ttl,
+        value: item.value instanceof Set ? Array.from(item.value) : item.value
+      };
+    }
+
+    const jsonStr = JSON.stringify(exportObj, null, 2);
+    const blob = new Blob([jsonStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `redis-vault-${Date.now()}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    audio.playSuccess();
+    appendTerminalEntry('DUMP VAULT', {
+      type: 'string',
+      raw: `[OK] ${store.size} claves exportadas exitosamente a '${a.download}'.`
+    });
+  }
+
+  if (btnExportVault) {
+    btnExportVault.addEventListener('click', exportVaultData);
+  }
 
   // Sound Toggle
   btnSoundToggle.addEventListener('click', () => {

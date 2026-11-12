@@ -56,11 +56,17 @@
           </div>
         </div>
         <div class="hud-actions">
+          <button id="btn-theme-toggle" class="cyber-btn-mini btn-theme" title="Alternar estilo: Cyberpunk HUD vs Neón Dark Minimal">
+            <span class="btn-icon">⚡</span> <span id="theme-label">TEMA: CYBERPUNK</span>
+          </button>
           <button id="btn-sound-toggle" class="cyber-btn-mini" title="Alternar Efectos de Sonido Cyberpunk">
             <span class="btn-icon">🔊</span> <span id="sound-label">AUDIO: ON</span>
           </button>
           <button id="btn-seed-data" class="cyber-btn-mini btn-highlight" title="Cargar Datos Cyberpunk de Prueba">
             <span class="btn-icon">⚡</span> SEED DEMO
+          </button>
+          <button id="btn-export-vault" class="cyber-btn-mini" title="Descargar backup de memoria (JSON / Redis CLI)">
+            <span class="btn-icon">💾</span> EXPORTAR
           </button>
           <button id="btn-flush-all" class="cyber-btn-mini btn-danger" title="Borrar toda la memoria (FLUSHALL)">
             <span class="btn-icon">⚠️</span> FLUSHALL
@@ -117,6 +123,21 @@
           <div id="term-logs" class="term-logs"></div>
         </div>
 
+        <!-- Live Syntax Suggestion Bar -->
+        <div id="terminal-suggestion-bar" class="terminal-suggestion-bar" style="display: none;">
+          <div class="suggestion-left">
+            <span id="suggestion-badge" class="suggestion-badge badge-string">STRING</span>
+            <span id="suggestion-cmd" class="suggestion-cmd">SET</span>
+            <span id="suggestion-syntax" class="suggestion-syntax">key value [EX seg]</span>
+            <span id="suggestion-desc" class="suggestion-desc">Guarda un valor de texto en la clave</span>
+          </div>
+          <div class="suggestion-right">
+            <button id="btn-apply-suggestion" class="suggestion-action-btn" title="Completar comando [Tab]">
+              <kbd class="kbd-pill">TAB</kbd> Completar
+            </button>
+          </div>
+        </div>
+
         <!-- Terminal Input Prompt -->
         <div class="terminal-prompt-bar">
           <label for="terminal-input" class="prompt-symbol">
@@ -131,7 +152,7 @@
           </button>
         </div>
         <div class="prompt-hint">
-          <span>Usa <kbd class="kbd-pill">&uarr;</kbd> <kbd class="kbd-pill">&darr;</kbd> para historial &bull; <kbd class="kbd-pill">Tab</kbd> para autocompletar &bull; Escribe <kbd class="kbd-pill">HELP</kbd> para manual</span>
+          <span>Usa <kbd class="kbd-pill">&uarr;</kbd> <kbd class="kbd-pill">&darr;</kbd> para historial &bull; <kbd class="kbd-pill">Tab</kbd> autocompletar &bull; <kbd class="kbd-pill">Ctrl+L</kbd> limpiar &bull; Escribe <kbd class="kbd-pill">HELP</kbd></span>
         </div>
       </section>
 

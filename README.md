@@ -1,6 +1,24 @@
 # ⚡ REDIS // NEON-CORE [DATA-VAULT TERMINAL]
 
-> Interfaz web interactiva (HTML/CSS/JS puro) con estética **Cyberpunk Consola Futurista (Neon-Core)**, simulador de motor Redis en memoria en tiempo real, visualizador holográfico **Data-Vault Memory**, sintetizador de efectos de audio procedurales (Web Audio API) y directorio de comandos tácticos. 100% responsiva para celulares, tablets y desktop.
+> Interfaz web interactiva (HTML/CSS/JS puro) con simulador de motor Redis en tiempo real, visualizador holográfico reactivo **Data-Vault Memory**, sintetizador de efectos de audio procedurales (Web Audio API), barra inteligente de sugerencias de sintaxis y selector de temas de doble estética: **Cyberpunk HUD** vs **Neón Dark Minimalista**. 100% responsiva para celulares, tablets y desktop.
+
+🌐 **Demo en vivo en GitHub Pages:** [https://xjhony911.github.io/redis-cyberpunk-console/](https://xjhony911.github.io/redis-cyberpunk-console/)
+
+---
+
+## 🎨 Selector de Temas Dual (Dual Aesthetic Engine)
+
+La consola incorpora un motor de estilos intercambiable en 1 clic (con persistencia en `localStorage` y sonido cristalino armónico):
+
+1. **⚡ Cyberpunk HUD (Por defecto):**
+   - Estética retrofuturista con líneas de escaneo CRT y distorsión fósforo.
+   - Cortes poligonales (`clip-path`) en paneles y tarjetas con muescas angulares.
+   - Animaciones glitch activas en encabezados y tipografía monoespaciada de alta intensidad.
+2. **✦ Neón Dark Minimalista:**
+   - Fondo negro OLED ultra-profundo (`#030508`) con gradiente ambiental sutil.
+   - Glassmorphism moderno (`backdrop-filter: blur(24px)`) y bordes suaves redondeados (`border-radius: 12px/14px`).
+   - Sin scanlines ni efectos de glitch para máxima legibilidad y descanso visual.
+   - Acentos de neón cian, verde esmeralda y violeta eléctrico refinado.
 
 ---
 
@@ -8,9 +26,10 @@
 
 - **Consola Cyber-Shell Interactiva:**
   - Prompt auténtico `127.0.0.1:6379>` con cursor pulsante.
-  - Soporte de comandos Redis con argumentos, cadenas con comillas y respuestas formateadas en protocolo RESP (`OK`, `(integer)`, `(nil)`, arrays numerados `1) "..."`, errores formateados).
+  - **Barra de Sugerencias de Sintaxis en Vivo:** Mientras escribes cualquier comando (ej. `SET`, `HSET`, `ZADD`), una barra interactiva muestra en tiempo real la categoría, la sintaxis exacta con argumentos y la descripción.
+  - Autocompletado inteligente con tecla <kbd>Tab</kbd> o botón de completar.
+  - Atajo global <kbd>Ctrl+L</kbd> o <kbd>Cmd+L</kbd> para limpiar la pantalla de terminal al instante.
   - Historial de comandos navegable con las flechas <kbd>↑</kbd> y <kbd>↓</kbd>.
-  - Autocompletado de comandos con tecla <kbd>Tab</kbd>.
   - Snippets de acceso rápido superiores para pruebas en 1 clic.
 
 - **Data-Vault Memory Visualizer (Panel Lateral Reactivo):**
@@ -20,12 +39,15 @@
     - 🟡 **LISTS**: Pipelines enlazados de nodos indexados `[0] -> [1] -> [2]`.
     - 🟣 **SETS**: Nubes de etiquetas de miembros únicos sin duplicados.
     - 🔴 **SORTED SETS**: Tablas de clasificación (*leaderboards*) ordenadas en tiempo real por score numérico.
+  - **Inspección en 1 Clic:** Haz clic en el nombre de cualquier clave o en su botón `[▶ GET]` para que la consola ejecute automáticamente la consulta correspondiente (`GET`, `HGETALL`, `LRANGE`, `SMEMBERS` o `ZRANGE`).
+  - **Resaltado de Búsqueda:** Filtra claves y visualiza las coincidencias de texto iluminadas en neón (`<mark>`).
   - **Efecto Holográfico de Destello (Neon Flash):** Cuando un comando inserta o modifica un dato, la tarjeta correspondiente pulsa intensamente con animación neón.
   - **Autodestrucción Activa (TTL Countdown):** Al aplicar `EXPIRE clave segundos`, el Vault muestra la cuenta regresiva en vivo y destruye la clave con sonido digital al expirar.
-  - Filtro por tipos (ALL, STR, HASH, LIST, SET, ZSET), buscador de claves y eliminación rápida `[×]`.
+  - **Exportación de Memoria (Botón 💾 EXPORTAR):** Descarga una copia de seguridad en formato JSON estructurado con un solo clic.
 
-- **Sintetizador de Sonidos Cyberpunk Procedurales (Web Audio API):**
+- **Sintetizador de Sonidos Procedurales (Web Audio API):**
   - **Cero archivos mp3 externos**: 100% autónomo y offline.
+  - Campanada armónica cristalina al alternar entre temas Cyberpunk y Neón Minimalista.
   - Sonido seco y corto de desintegración digital al eliminar (`DEL`, `[×]`, `LPOP`, `FLUSHALL`).
   - Chirp ascendente de alta tecnología al escribir (`SET`, `HSET`, `LPUSH`, `SADD`, etc.).
   - Sonar escáner de doble frecuencia al consultar (`GET`, `LRANGE`, `HGETALL`, `KEYS`, etc.).
@@ -34,7 +56,7 @@
   - Botón de silenciar/activar audio en el HUD (`🔊 AUDIO: ON / MUTED`).
 
 - **Directorio Total de Comandos (Cyber-Command Matrix):**
-  - Registro de más de 35 comandos organizados en categorías.
+  - Registro de más de 40 comandos organizados en categorías.
   - Búsqueda en vivo instantánea por nombre, sintaxis o función.
   - Explicaciones directas y concisas sin muros de texto.
   - Botones `[▶ Probar]` para inyectar y ejecutar el comando al instante en la terminal.

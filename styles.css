@@ -1507,14 +1507,15 @@ button {
   .hud-actions {
     width: 100%;
     display: flex;
-    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 6px;
   }
 
   .hud-actions .cyber-btn-mini {
-    flex: 1;
+    flex: 1 1 calc(50% - 6px);
     justify-content: center;
-    padding: 8px 6px;
-    font-size: 0.7rem;
+    padding: 7px 6px;
+    font-size: 0.68rem;
   }
 
   .stat-cell {
@@ -1679,3 +1680,403 @@ button {
 .text-neon-pink { color: var(--neon-pink) !important; }
 .text-neon-yellow { color: var(--neon-yellow) !important; }
 .text-dim { color: var(--text-dim) !important; }
+
+/* ==========================================================================
+   THEME TOGGLE BUTTON & ACTION ENHANCEMENTS
+   ========================================================================== */
+.cyber-btn-mini.btn-theme {
+  background: rgba(168, 85, 247, 0.12);
+  border-color: rgba(168, 85, 247, 0.45);
+  color: #c084fc;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.cyber-btn-mini.btn-theme:hover {
+  background: rgba(168, 85, 247, 0.26);
+  border-color: #c084fc;
+  box-shadow: 0 0 14px rgba(168, 85, 247, 0.55);
+}
+
+.cyber-btn-mini.btn-theme-active {
+  background: rgba(0, 243, 255, 0.16) !important;
+  border-color: var(--neon-cyan) !important;
+  color: var(--neon-cyan) !important;
+  box-shadow: 0 0 14px rgba(0, 243, 255, 0.45) !important;
+}
+
+/* ==========================================================================
+   TERMINAL LIVE SYNTAX SUGGESTION BAR
+   ========================================================================== */
+.terminal-suggestion-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 14px;
+  background: rgba(5, 12, 22, 0.96);
+  border-top: 1px solid rgba(0, 243, 255, 0.22);
+  border-bottom: 1px solid rgba(0, 243, 255, 0.12);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  transition: all 0.2s ease;
+  animation: fadeIn 0.15s ease-out;
+  position: relative;
+  z-index: 5;
+}
+
+.suggestion-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.suggestion-badge {
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 1px 7px;
+  border-radius: 3px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.suggestion-badge.badge-string { background: rgba(0, 243, 255, 0.16); color: var(--neon-cyan); border: 1px solid rgba(0, 243, 255, 0.45); }
+.suggestion-badge.badge-hash { background: rgba(192, 132, 252, 0.16); color: var(--neon-purple); border: 1px solid rgba(192, 132, 252, 0.45); }
+.suggestion-badge.badge-list { background: rgba(0, 255, 102, 0.16); color: var(--neon-green); border: 1px solid rgba(0, 255, 102, 0.45); }
+.suggestion-badge.badge-set { background: rgba(255, 0, 127, 0.16); color: var(--neon-pink); border: 1px solid rgba(255, 0, 127, 0.45); }
+.suggestion-badge.badge-zset { background: rgba(255, 230, 0, 0.16); color: var(--neon-yellow); border: 1px solid rgba(255, 230, 0, 0.45); }
+.suggestion-badge.badge-general { background: rgba(68, 104, 135, 0.28); color: var(--text-primary); border: 1px solid rgba(68, 104, 135, 0.55); }
+
+.suggestion-cmd {
+  font-weight: 700;
+  color: var(--neon-cyan);
+  letter-spacing: 0.6px;
+}
+
+.suggestion-syntax {
+  color: var(--text-primary);
+  background: rgba(0, 0, 0, 0.45);
+  padding: 2px 7px;
+  border-radius: 3px;
+  border: 1px dashed rgba(0, 243, 255, 0.3);
+  font-size: 0.74rem;
+}
+
+.suggestion-desc {
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.suggestion-right {
+  flex-shrink: 0;
+}
+
+.suggestion-action-btn {
+  background: rgba(0, 243, 255, 0.12);
+  border: 1px solid rgba(0, 243, 255, 0.4);
+  color: var(--neon-cyan);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  padding: 3px 9px;
+  border-radius: 3px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  transition: all 0.15s ease;
+}
+
+.suggestion-action-btn:hover {
+  background: rgba(0, 243, 255, 0.25);
+  border-color: var(--neon-cyan);
+  box-shadow: 0 0 10px rgba(0, 243, 255, 0.4);
+}
+
+/* Search Term Highlighting */
+mark.neon-match {
+  background: rgba(0, 243, 255, 0.3);
+  color: #ffffff;
+  padding: 0 3px;
+  border-radius: 2px;
+  box-shadow: 0 0 8px rgba(0, 243, 255, 0.6);
+  font-weight: 600;
+}
+
+/* Card Key Name Clickable for Instant Query */
+.card-key-name.clickable {
+  cursor: pointer;
+  transition: all 0.15s ease;
+  position: relative;
+}
+
+.card-key-name.clickable:hover {
+  color: var(--neon-cyan) !important;
+  text-decoration: underline;
+  text-shadow: 0 0 8px var(--neon-cyan);
+}
+
+.card-btn-query {
+  background: transparent;
+  border: 1px solid rgba(0, 243, 255, 0.28);
+  color: var(--neon-cyan);
+  font-size: 0.64rem;
+  padding: 1px 5px;
+  border-radius: 2px;
+  cursor: pointer;
+  margin-right: 4px;
+  transition: all 0.15s ease;
+}
+
+.card-btn-query:hover {
+  background: rgba(0, 243, 255, 0.22);
+  border-color: var(--neon-cyan);
+  box-shadow: 0 0 8px rgba(0, 243, 255, 0.35);
+}
+
+/* ==========================================================================
+   THEME: NEON DARK MINIMALISTA (body.theme-minimal)
+   Clean, OLED velvety dark, sleek glassmorphism, rounded geometry, no scanlines
+   ========================================================================== */
+body.theme-minimal {
+  --bg-void: #030508;
+  --bg-deep: #060910;
+  --bg-panel: rgba(9, 14, 24, 0.82);
+  --bg-card: rgba(13, 20, 33, 0.68);
+  --bg-card-hover: rgba(18, 29, 48, 0.88);
+
+  --neon-cyan: #00e5ff;
+  --neon-green: #10b981;
+  --neon-pink: #f43f5e;
+  --neon-yellow: #f59e0b;
+  --neon-purple: #a855f7;
+  --neon-red: #ef4444;
+  --neon-dim: #1e293b;
+
+  --text-primary: #f1f5f9;
+  --text-secondary: #94a3b8;
+  --text-dim: #64748b;
+  --text-muted: #334155;
+
+  --glow-cyan: 0 0 16px rgba(0, 229, 255, 0.35);
+  --glow-green: 0 0 16px rgba(16, 185, 129, 0.35);
+  --glow-pink: 0 0 16px rgba(244, 63, 94, 0.35);
+  --glow-yellow: 0 0 16px rgba(245, 158, 11, 0.35);
+  --glow-purple: 0 0 16px rgba(168, 85, 247, 0.35);
+
+  letter-spacing: 0.1px;
+}
+
+/* 1. Turn off scanlines & CRT TV distortion */
+body.theme-minimal .crt-overlay {
+  display: none !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+/* 2. Sleek subtle dot grid & refined ambient glow */
+body.theme-minimal .cyber-grid {
+  background-image: 
+    radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+  background-size: 24px 24px;
+  mask-image: radial-gradient(circle at 50% 30%, black 70%, transparent 100%);
+  -webkit-mask-image: radial-gradient(circle at 50% 30%, black 70%, transparent 100%);
+  opacity: 0.45;
+}
+
+body.theme-minimal .ambient-glow {
+  background: radial-gradient(circle at 50% 10%, rgba(0, 229, 255, 0.07) 0%, rgba(168, 85, 247, 0.04) 40%, transparent 70%);
+}
+
+/* 3. Disable noisy glitch skew animations for razor-sharp, calm typography */
+body.theme-minimal .logo-glitch,
+body.theme-minimal .glitch-text,
+body.theme-minimal .glitch-text:hover {
+  animation: none !important;
+  transform: none !important;
+}
+
+body.theme-minimal .logo-glitch {
+  text-shadow: 0 0 20px rgba(0, 229, 255, 0.55) !important;
+}
+
+/* 4. Smooth rounded geometry & deep glassmorphism on HUD and Panels */
+body.theme-minimal .hud-header {
+  clip-path: none !important;
+  border-radius: 14px;
+  background: rgba(9, 14, 24, 0.85) !important;
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  box-shadow: 0 12px 35px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+body.theme-minimal .hud-header::before {
+  display: none !important;
+}
+
+body.theme-minimal .cyber-panel {
+  clip-path: none !important;
+  border-radius: 14px;
+  background: rgba(9, 14, 24, 0.84) !important;
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+/* Remove polygon corner notches in minimal theme */
+body.theme-minimal .cyber-panel::before,
+body.theme-minimal .cyber-panel::after {
+  display: none !important;
+}
+
+/* Clean panel header */
+body.theme-minimal .panel-header {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  padding: 12px 20px;
+}
+
+/* Minimalist buttons & pill shapes */
+body.theme-minimal .cyber-btn-mini {
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--text-primary);
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+body.theme-minimal .cyber-btn-mini:hover {
+  background: rgba(0, 229, 255, 0.12);
+  border-color: rgba(0, 229, 255, 0.4);
+  color: var(--neon-cyan);
+  box-shadow: 0 4px 14px rgba(0, 229, 255, 0.2);
+  transform: translateY(-1px);
+}
+
+body.theme-minimal .cyber-btn-mini.btn-highlight {
+  background: rgba(16, 185, 129, 0.09);
+  border-color: rgba(16, 185, 129, 0.35);
+  color: var(--neon-green);
+}
+
+body.theme-minimal .cyber-btn-mini.btn-highlight:hover {
+  background: rgba(16, 185, 129, 0.2);
+  border-color: var(--neon-green);
+  box-shadow: 0 4px 14px rgba(16, 185, 129, 0.3);
+}
+
+body.theme-minimal .cyber-btn-mini.btn-danger {
+  background: rgba(239, 68, 68, 0.09);
+  border-color: rgba(239, 68, 68, 0.35);
+  color: var(--neon-red);
+}
+
+body.theme-minimal .cyber-btn-mini.btn-danger:hover {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: var(--neon-red);
+  box-shadow: 0 4px 14px rgba(239, 68, 68, 0.3);
+}
+
+body.theme-minimal .cyber-btn-action {
+  border-radius: 8px;
+  background: linear-gradient(135deg, rgba(0, 229, 255, 0.22), rgba(168, 85, 247, 0.26));
+  border: 1px solid rgba(0, 229, 255, 0.45);
+  color: #fff;
+  box-shadow: 0 4px 16px rgba(0, 229, 255, 0.2);
+  transition: all 0.2s ease;
+}
+
+body.theme-minimal .cyber-btn-action:hover {
+  background: linear-gradient(135deg, rgba(0, 229, 255, 0.36), rgba(168, 85, 247, 0.42));
+  box-shadow: 0 6px 22px rgba(0, 229, 255, 0.38);
+}
+
+/* Minimalist Vault Cards */
+body.theme-minimal .vault-card {
+  clip-path: none !important;
+  border-radius: 10px;
+  background: rgba(13, 20, 33, 0.75) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+body.theme-minimal .vault-card:hover {
+  border-color: rgba(0, 229, 255, 0.35);
+  box-shadow: 0 8px 26px rgba(0, 229, 255, 0.16);
+  transform: translateY(-2px);
+}
+
+/* Minimalist Command Directory Cards */
+body.theme-minimal .cmd-dir-card {
+  border-radius: 10px;
+  background: rgba(13, 20, 33, 0.7) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.28);
+  transition: all 0.2s ease;
+}
+
+body.theme-minimal .cmd-dir-card:hover {
+  border-color: rgba(0, 229, 255, 0.32);
+  box-shadow: 0 8px 24px rgba(0, 229, 255, 0.14);
+  transform: translateY(-2px);
+}
+
+/* Minimalist Chips & Tags */
+body.theme-minimal .type-chip,
+body.theme-minimal .dir-filter-chip {
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  transition: all 0.2s ease;
+}
+
+body.theme-minimal .type-chip.active,
+body.theme-minimal .dir-filter-chip.active {
+  background: rgba(0, 229, 255, 0.16);
+  border-color: var(--neon-cyan);
+  color: var(--neon-cyan);
+  box-shadow: 0 0 14px rgba(0, 229, 255, 0.28);
+}
+
+/* Terminal Screen in Minimal Theme */
+body.theme-minimal .terminal-screen {
+  background: #020408 !important;
+}
+
+body.theme-minimal .terminal-prompt-bar {
+  background: #040810 !important;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+body.theme-minimal .terminal-suggestion-bar {
+  background: rgba(4, 9, 18, 0.95);
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+body.theme-minimal .quick-cmd {
+  border-radius: 4px;
+}
+
+/* Responsive adjustment for suggestion bar */
+@media (max-width: 680px) {
+  .terminal-suggestion-bar {
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 6px 10px;
+  }
+  
+  .suggestion-desc {
+    display: none;
+  }
+  
+  .suggestion-syntax {
+    font-size: 0.68rem;
+  }
+}
