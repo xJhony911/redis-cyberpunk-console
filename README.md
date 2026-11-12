@@ -43,11 +43,37 @@ La consola incorpora un motor de estilos intercambiable en 1 clic (con persisten
   - **Resaltado de Búsqueda:** Filtra claves y visualiza las coincidencias de texto iluminadas en neón (`<mark>`).
   - **Efecto Holográfico de Destello (Neon Flash):** Cuando un comando inserta o modifica un dato, la tarjeta correspondiente pulsa intensamente con animación neón.
   - **Autodestrucción Activa (TTL Countdown):** Al aplicar `EXPIRE clave segundos`, el Vault muestra la cuenta regresiva en vivo y destruye la clave con sonido digital al expirar.
-  - **Exportación de Memoria (Botón 💾 EXPORTAR):** Descarga una copia de seguridad en formato JSON estructurado con un solo clic.
+  - **Exportación e Importación de Memoria (JSON & Drag-and-Drop):**
+    - `💾 EXPORTAR`: Descarga un respaldo JSON estructurado de toda la memoria.
+    - `📥 IMPORTAR`: Carga respaldos JSON guardados para restaurar el Data-Vault en 1 segundo.
+    - **Drag & Drop**: Arrastra cualquier archivo `.json` directamente sobre el contenedor del Vault para restaurarlo.
+
+- **🎯 Misiones Cyber-Ops (Protocolo de Entrenamiento Netrunner):**
+  - Panel interactivo con 6 misiones prácticas que validan el estado de la memoria en tiempo real.
+  - Progresión de rango: **Novato** &rarr; **Operativo** &rarr; **Cyber-Decker** &rarr; **Maestro Cuántico** (600 XP).
+  - Fanfarria sonora triunfal y desbloqueo progresivo al cumplir cada objetivo táctico.
+  - Botón de inyección guiada para probar y aprender la sintaxis exacta de cada reto.
+
+- **🚀 Benchmark Cuántico de Rendimiento:**
+  - Botón `🚀 BENCHMARK` en el HUD para ejecutar pruebas de estrés de 100 operaciones concurrentes en memoria.
+  - Despliega en la consola un informe detallado con operaciones por segundo (ops/sec), latencia promedio (ms/op) y telemetría de memoria.
+
+- **⚡ Multi-Lenguaje SDK (Redis CLI / Python / Node.js):**
+  - Selector de lenguajes en la cabecera del directorio de comandos.
+  - Alterna dinámicamente el código de los 42 comandos entre:
+    - **REDIS CLI:** Sintaxis pura del protocolo RESP.
+    - **PYTHON:** Código listo para producción con la librería `redis-py` (`r.set()`, `r.hset()`, `r.zadd()`).
+    - **NODE.JS:** Código moderno con soporte `async/await` usando la librería `ioredis`.
+  - El botón `[📋 Copiar]` copia automáticamente la versión del lenguaje seleccionado.
+
+- **⛶ Modo Cockpit Pantalla Completa:**
+  - Botón `⛶ FULLSCREEN` para una experiencia inmersiva y sin distracciones.
 
 - **Sintetizador de Sonidos Procedurales (Web Audio API):**
   - **Cero archivos mp3 externos**: 100% autónomo y offline.
   - Campanada armónica cristalina al alternar entre temas Cyberpunk y Neón Minimalista.
+  - Ráfaga electrónica de datos al disparar el Benchmark.
+  - Fanfarria de acordes ascendentes al completar misiones tácticas.
   - Sonido seco y corto de desintegración digital al eliminar (`DEL`, `[×]`, `LPOP`, `FLUSHALL`).
   - Chirp ascendente de alta tecnología al escribir (`SET`, `HSET`, `LPUSH`, `SADD`, etc.).
   - Sonar escáner de doble frecuencia al consultar (`GET`, `LRANGE`, `HGETALL`, `KEYS`, etc.).

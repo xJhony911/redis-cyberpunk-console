@@ -258,6 +258,48 @@
         });
       } catch (e) { /* ignore */ }
     }
+
+    // Benchmark Burst: Rapid futuristic data stream burst
+    playBenchmarkBurst() {
+      if (!this.enabled) return;
+      this.init();
+      try {
+        const now = this.ctx.currentTime;
+        for (let i = 0; i < 8; i++) {
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = i % 2 === 0 ? 'triangle' : 'sine';
+          osc.frequency.setValueAtTime(400 + i * 180, now + i * 0.025);
+          gain.gain.setValueAtTime(0.03, now + i * 0.025);
+          gain.gain.exponentialRampToValueAtTime(0.0001, now + i * 0.025 + 0.035);
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start(now + i * 0.025);
+          osc.stop(now + i * 0.025 + 0.035);
+        }
+      } catch (e) { /* ignore */ }
+    }
+
+    // Mission Complete Fanfare: Ascending Triumph Chord
+    playMissionComplete() {
+      if (!this.enabled) return;
+      this.init();
+      try {
+        const now = this.ctx.currentTime;
+        [523.25, 659.25, 783.99, 1046.50].forEach((freq, idx) => {
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(freq, now + idx * 0.06);
+          gain.gain.setValueAtTime(0.045, now + idx * 0.06);
+          gain.gain.exponentialRampToValueAtTime(0.0001, now + idx * 0.06 + 0.22);
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start(now + idx * 0.06);
+          osc.stop(now + idx * 0.06 + 0.22);
+        });
+      } catch (e) { /* ignore */ }
+    }
   }
 
   const audio = new CyberAudioEngine();
@@ -1132,6 +1174,22 @@
   const btnThemeToggle = document.getElementById('btn-theme-toggle');
   const themeLabel = document.getElementById('theme-label');
   const btnExportVault = document.getElementById('btn-export-vault');
+  const btnImportVault = document.getElementById('btn-import-vault');
+  const fileImportVault = document.getElementById('file-import-vault');
+  const btnBenchmark = document.getElementById('btn-benchmark');
+  const btnFullscreen = document.getElementById('btn-fullscreen');
+
+  const btnMissionsToggle = document.getElementById('btn-missions-toggle');
+  const missionProgressLabel = document.getElementById('mission-progress-label');
+  const modalMissions = document.getElementById('modal-missions');
+  const modalMissionsBackdrop = document.getElementById('modal-missions-backdrop');
+  const btnCloseMissions = document.getElementById('btn-close-missions');
+  const btnDoneMissions = document.getElementById('btn-done-missions');
+  const btnResetMissions = document.getElementById('btn-reset-missions');
+  const missionsGrid = document.getElementById('missions-grid');
+  const netrunnerRank = document.getElementById('netrunner-rank');
+  const netrunnerXp = document.getElementById('netrunner-xp');
+  const missionProgressBar = document.getElementById('mission-progress-bar');
 
   const suggestionBar = document.getElementById('terminal-suggestion-bar');
   const suggestionBadge = document.getElementById('suggestion-badge');
@@ -1447,6 +1505,7 @@
   engine.subscribe(({ changedKey, action }) => {
     updateHUDStats();
     renderVaultMemory(changedKey, action);
+    checkMissions();
   });
 
   // --------------------------------------------------------------------------
@@ -1886,10 +1945,591 @@
   });
 
   // --------------------------------------------------------------------------
+  // Benchmark / Stress Test Engine
+  // --------------------------------------------------------------------------
+  function runBenchmark() {
+    audio.playBenchmarkBurst();
+    appendTerminalEntry('BENCHMARK --START', {
+      type: 'system',
+      raw: '>>> INICIANDO BENCHMARK CUÁNTICO // 100 OPERACIONES EN PIPELINE...'
+    });
+
+    const t0 = performance.now();
+    const totalOps = 100;
+
+    for (let i = 0; i < 20; i++) {
+      engine.execute(`SET bench:key:${i} "PACKET_DATA_${i * 999}"`);
+      engine.execute(`INCR bench:counter`);
+      engine.execute(`LPUSH bench:stream "node_${i}"`);
+      engine.execute(`SADD bench:cluster "addr_${i}"`);
+      engine.execute(`ZADD bench:ranking ${i * 1250} "target_${i}"`);
+    }
+
+    const t1 = performance.now();
+    const elapsedMs = Math.max(0.01, t1 - t0);
+    const throughput = Math.round(totalOps / (elapsedMs / 1000));
+    const avgLatency = (elapsedMs / totalOps).toFixed(3);
+
+    updateHUDStats();
+    renderVaultMemory(null, 'benchmark');
+
+    const report = [
+      `╔════════════════════════════════════════════════════════════╗`,
+      `║            REDIS QUANTUM BENCHMARK REPORT                  ║`,
+      `╠════════════════════════════════════════════════════════════╣`,
+      `║  Total Operaciones:       ${totalOps} OPS en memoria              ║`,
+      `║  Tiempo Transcurrido:     ${elapsedMs.toFixed(2)} ms                        ║`,
+      `║  Rendimiento Estimado:    ${throughput.toLocaleString()} ops/sec               ║`,
+      `║  Latencia Promedio:       ${avgLatency} ms/op                   ║`,
+      `║  Operaciones Ejecutadas:  20x SET, 20x INCR, 20x LPUSH     ║`,
+      `║                           20x SADD, 20x ZADD               ║`,
+      `║  Estado del Motor:        ÓPTIMO // 0% PÉRDIDA DE PAQUETES ║`,
+      `╚════════════════════════════════════════════════════════════╝`
+    ].join('\n');
+
+    appendTerminalEntry('BENCHMARK --REPORT', {
+      type: 'string',
+      raw: report
+    });
+  }
+
+  if (btnBenchmark) {
+    btnBenchmark.addEventListener('click', runBenchmark);
+  }
+
+  // --------------------------------------------------------------------------
+  // Import Vault Data (File Picker & Drag & Drop)
+  // --------------------------------------------------------------------------
+  function processImportedJson(jsonText, filename = 'backup.json') {
+    try {
+      const data = JSON.parse(jsonText);
+      if (!data.keys || typeof data.keys !== 'object') {
+        throw new Error('Estructura inválida. Debe ser un JSON con la propiedad "keys".');
+      }
+
+      let count = 0;
+      for (let k in data.keys) {
+        const item = data.keys[k];
+        let val = item.value;
+        if (item.type === 'set' && Array.isArray(val)) {
+          val = new Set(val);
+        }
+        engine.store.set(k, {
+          type: item.type,
+          value: val,
+          ttl: item.ttl ?? null,
+          createdAt: Date.now()
+        });
+        count++;
+      }
+
+      updateHUDStats();
+      renderVaultMemory(null, 'import');
+      audio.playSuccess();
+      appendTerminalEntry('IMPORT VAULT', {
+        type: 'string',
+        raw: `[RESTORE OK] ${count} claves restauradas con éxito desde '${filename}'.`
+      });
+    } catch (err) {
+      audio.playError();
+      alert('Error al importar archivo JSON: ' + err.message);
+    }
+  }
+
+  if (btnImportVault && fileImportVault) {
+    btnImportVault.addEventListener('click', () => {
+      fileImportVault.click();
+    });
+
+    fileImportVault.addEventListener('change', (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        processImportedJson(event.target.result, file.name);
+        fileImportVault.value = '';
+      };
+      reader.readAsText(file);
+    });
+  }
+
+  // Drag & drop support on vault container
+  if (vaultCardsContainer) {
+    ['dragenter', 'dragover'].forEach(eventName => {
+      vaultCardsContainer.addEventListener(eventName, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        vaultCardsContainer.classList.add('drag-over');
+      });
+    });
+
+    ['dragleave', 'drop'].forEach(eventName => {
+      vaultCardsContainer.addEventListener(eventName, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        vaultCardsContainer.classList.remove('drag-over');
+      });
+    });
+
+    vaultCardsContainer.addEventListener('drop', (e) => {
+      const dt = e.dataTransfer;
+      const files = dt && dt.files;
+      if (files && files.length > 0) {
+        const file = files[0];
+        if (file.name.endsWith('.json')) {
+          const reader = new FileReader();
+          reader.onload = (event) => {
+            processImportedJson(event.target.result, file.name);
+          };
+          reader.readAsText(file);
+        } else {
+          audio.playError();
+          alert('Por favor, arrastra un archivo de volcado con extensión .json.');
+        }
+      }
+    });
+  }
+
+  // --------------------------------------------------------------------------
+  // Fullscreen Mode Controller
+  // --------------------------------------------------------------------------
+  function toggleFullscreen() {
+    audio.playKeypress();
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(() => {});
+      if (btnFullscreen) btnFullscreen.innerHTML = '<span class="btn-icon">🗗</span> SALIR FS';
+    } else {
+      document.exitFullscreen().catch(() => {});
+      if (btnFullscreen) btnFullscreen.innerHTML = '<span class="btn-icon">⛶</span> FULLSCREEN';
+    }
+  }
+
+  if (btnFullscreen) {
+    btnFullscreen.addEventListener('click', toggleFullscreen);
+  }
+
+  document.addEventListener('fullscreenchange', () => {
+    if (!document.fullscreenElement && btnFullscreen) {
+      btnFullscreen.innerHTML = '<span class="btn-icon">⛶</span> FULLSCREEN';
+    }
+  });
+
+  // --------------------------------------------------------------------------
+  // Cyber-Ops Missions Training System
+  // --------------------------------------------------------------------------
+  const MISSIONS = [
+    {
+      id: 1,
+      cat: 'STRINGS',
+      title: 'Misión 01: Infiltración Básica',
+      desc: 'Desbloquea el acceso corporativo guardando la clave "puerta_01" con valor "desbloqueada".',
+      cmd: 'SET puerta_01 "desbloqueada"',
+      check: (store) => store.has('puerta_01') && String(store.get('puerta_01').value).includes('desbloqueada')
+    },
+    {
+      id: 2,
+      cat: 'STRINGS',
+      title: 'Misión 02: Tarjeta Sin Colisión',
+      desc: 'Registra la tarjeta de acceso con SETNX para evitar sobrescribir huellas de otros netrunners.',
+      cmd: 'SETNX tarjeta_acceso "valida"',
+      check: (store) => store.has('tarjeta_acceso') && store.get('tarjeta_acceso').value === 'valida'
+    },
+    {
+      id: 3,
+      cat: 'HASHES',
+      title: 'Misión 03: Perfil Clandestino',
+      desc: 'Crea el perfil de mercenario "operativo:v" con los campos "nombre" y "clase".',
+      cmd: 'HSET operativo:v nombre "Vincent" clase "Solo" nivel 45',
+      check: (store) => {
+        const item = store.get('operativo:v');
+        return item && item.type === 'hash' && 'nombre' in item.value && 'clase' in item.value;
+      }
+    },
+    {
+      id: 4,
+      cat: 'LISTS',
+      title: 'Misión 04: Registro Forense de Intrusión',
+      desc: 'Apila al menos 2 eventos en la cola indexada "log_hackeos" usando LPUSH o RPUSH.',
+      cmd: 'LPUSH log_hackeos "Servidor_Arasaka" "Camara_Callejon"',
+      check: (store) => {
+        const item = store.get('log_hackeos');
+        return item && item.type === 'list' && item.value.length >= 2;
+      }
+    },
+    {
+      id: 5,
+      cat: 'SETS',
+      title: 'Misión 05: Red de Nodos Seguros',
+      desc: 'Agrega al menos 2 nodos únicos sin duplicados al conjunto "red_fantasma" con SADD.',
+      cmd: 'SADD red_fantasma "nodo_A" "nodo_B"',
+      check: (store) => {
+        const item = store.get('red_fantasma');
+        return item && item.type === 'set' && item.value.size >= 2;
+      }
+    },
+    {
+      id: 6,
+      cat: 'SORTED SETS',
+      title: 'Misión 06: Leaderboard de Amenazas',
+      desc: 'Registra un objetivo en el ranking "recompensas" con una puntuación igual o mayor a 50000 usando ZADD.',
+      cmd: 'ZADD recompensas 50000 "Maelstrom_Lider"',
+      check: (store) => {
+        const item = store.get('recompensas');
+        return item && item.type === 'zset' && item.value.some(x => x.score >= 50000);
+      }
+    }
+  ];
+
+  let completedMissionsHistory = new Set();
+  try {
+    const saved = localStorage.getItem('cyber_redis_missions');
+    if (saved) {
+      completedMissionsHistory = new Set(JSON.parse(saved));
+    }
+  } catch (e) {}
+
+  function renderMissionsList() {
+    if (!missionsGrid) return;
+    missionsGrid.innerHTML = '';
+
+    MISSIONS.forEach((m) => {
+      const card = document.createElement('div');
+      card.className = `mission-card ${m.isCompleted ? 'completed' : ''}`;
+
+      card.innerHTML = `
+        <div class="mission-card-top">
+          <span class="mission-num">${m.cat} &bull; M0${m.id}</span>
+          <span class="mission-status-badge ${m.isCompleted ? 'done' : 'pending'}">
+            ${m.isCompleted ? '&#10004; COMPLETADA (+100 XP)' : '&#128274; PENDIENTE'}
+          </span>
+        </div>
+        <h4 class="mission-title">${escapeHtml(m.title)}</h4>
+        <p class="mission-desc">${escapeHtml(m.desc)}</p>
+        <div class="mission-cmd-preview">
+          <code>${escapeHtml(m.cmd)}</code>
+          <button class="cyber-btn-mini btn-mission-inject" data-cmd="${escapeHtml(m.cmd)}">&#9654; Inyectar</button>
+        </div>
+      `;
+
+      const injectBtn = card.querySelector('.btn-mission-inject');
+      if (injectBtn) {
+        injectBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          injectExample(m.cmd);
+          if (modalMissions) modalMissions.style.display = 'none';
+        });
+      }
+
+      missionsGrid.appendChild(card);
+    });
+  }
+
+  function checkMissions() {
+    let completedCount = 0;
+    const store = engine.store;
+
+    MISSIONS.forEach((m) => {
+      const isDone = m.check(store);
+      if (isDone) {
+        completedCount++;
+        if (!completedMissionsHistory.has(m.id)) {
+          completedMissionsHistory.add(m.id);
+          try {
+            localStorage.setItem('cyber_redis_missions', JSON.stringify(Array.from(completedMissionsHistory)));
+          } catch (e) {}
+          audio.playMissionComplete();
+        }
+      }
+      m.isCompleted = isDone;
+    });
+
+    const xp = completedCount * 100;
+    if (netrunnerXp) netrunnerXp.textContent = `${xp} / 600 XP (${completedCount}/6 Misiones)`;
+    if (missionProgressLabel) missionProgressLabel.textContent = `${completedCount}/6`;
+    if (missionProgressBar) missionProgressBar.style.width = `${(completedCount / 6) * 100}%`;
+
+    if (netrunnerRank) {
+      if (completedCount === 6) {
+        netrunnerRank.textContent = '🏆 MAESTRO CUÁNTICO // 100% DESBLOQUEADO';
+        netrunnerRank.className = 'text-neon-green';
+      } else if (completedCount >= 4) {
+        netrunnerRank.textContent = 'CYBER-DECKER // TIER 3';
+        netrunnerRank.className = 'text-neon-cyan';
+      } else if (completedCount >= 2) {
+        netrunnerRank.textContent = 'OPERATIVO // TIER 2';
+        netrunnerRank.className = 'text-neon-yellow';
+      } else {
+        netrunnerRank.textContent = 'NOVATO // TIER 1';
+        netrunnerRank.className = 'text-neon-cyan';
+      }
+    }
+
+    renderMissionsList();
+  }
+
+  function openMissionsModal() {
+    if (modalMissions) {
+      modalMissions.style.display = 'flex';
+      checkMissions();
+      audio.playKeypress();
+    }
+  }
+
+  function closeMissionsModal() {
+    if (modalMissions) {
+      modalMissions.style.display = 'none';
+      audio.playKeypress();
+    }
+  }
+
+  if (btnMissionsToggle) btnMissionsToggle.addEventListener('click', openMissionsModal);
+  if (btnCloseMissions) btnCloseMissions.addEventListener('click', closeMissionsModal);
+  if (btnDoneMissions) btnDoneMissions.addEventListener('click', closeMissionsModal);
+  if (modalMissionsBackdrop) modalMissionsBackdrop.addEventListener('click', closeMissionsModal);
+
+  if (btnResetMissions) {
+    btnResetMissions.addEventListener('click', () => {
+      if (confirm('¿Deseas reiniciar el progreso de todas las misiones tácticas?')) {
+        completedMissionsHistory.clear();
+        try {
+          localStorage.removeItem('cyber_redis_missions');
+        } catch (e) {}
+        runTerminalCommand('FLUSHALL', true);
+        checkMissions();
+      }
+    });
+  }
+
+  // --------------------------------------------------------------------------
+  // SDK Multi-Language Switcher (Redis CLI / Python / Node.js)
+  // --------------------------------------------------------------------------
+  const SDK_TRANSLATIONS = {
+    'SET': {
+      redis: 'SET key value [EX seg]',
+      python: 'r.set("puerta_01", "desbloqueada", ex=30)',
+      node: 'await redis.set("puerta_01", "desbloqueada", "EX", 30);'
+    },
+    'GET': {
+      redis: 'GET key',
+      python: 'val = r.get("puerta_01")',
+      node: 'const val = await redis.get("puerta_01");'
+    },
+    'SETNX': {
+      redis: 'SETNX key value',
+      python: 'r.setnx("tarjeta_acceso", "valida")',
+      node: 'await redis.setnx("tarjeta_acceso", "valida");'
+    },
+    'INCR': {
+      redis: 'INCR key',
+      python: 'r.incr("cyber:credits")',
+      node: 'await redis.incr("cyber:credits");'
+    },
+    'DECR': {
+      redis: 'DECR key',
+      python: 'r.decr("cyber:shield")',
+      node: 'await redis.decr("cyber:shield");'
+    },
+    'APPEND': {
+      redis: 'APPEND key value',
+      python: 'r.append("puerta_01", "_override")',
+      node: 'await redis.append("puerta_01", "_override");'
+    },
+    'STRLEN': {
+      redis: 'STRLEN key',
+      python: 'length = r.strlen("puerta_01")',
+      node: 'const length = await redis.strlen("puerta_01");'
+    },
+    'HSET': {
+      redis: 'HSET key field value [f2 v2 ...]',
+      python: 'r.hset("operativo:v", mapping={"nombre": "Vincent", "clase": "Solo"})',
+      node: 'await redis.hset("operativo:v", "nombre", "Vincent", "clase", "Solo");'
+    },
+    'HGET': {
+      redis: 'HGET key field',
+      python: 'clase = r.hget("operativo:v", "clase")',
+      node: 'const clase = await redis.hget("operativo:v", "clase");'
+    },
+    'HGETALL': {
+      redis: 'HGETALL key',
+      python: 'profile = r.hgetall("operativo:v")',
+      node: 'const profile = await redis.hgetall("operativo:v");'
+    },
+    'HDEL': {
+      redis: 'HDEL key field [field2 ...]',
+      python: 'r.hdel("operativo:v", "implante_ilegal")',
+      node: 'await redis.hdel("operativo:v", "implante_ilegal");'
+    },
+    'HEXISTS': {
+      redis: 'HEXISTS key field',
+      python: 'has_field = r.hexists("operativo:v", "implante_ilegal")',
+      node: 'const hasField = await redis.hexists("operativo:v", "implante_ilegal");'
+    },
+    'HKEYS': {
+      redis: 'HKEYS key',
+      python: 'fields = r.hkeys("operativo:v")',
+      node: 'const fields = await redis.hkeys("operativo:v");'
+    },
+    'HVALS': {
+      redis: 'HVALS key',
+      python: 'values = r.hvals("operativo:v")',
+      node: 'const values = await redis.hvals("operativo:v");'
+    },
+    'LPUSH': {
+      redis: 'LPUSH key element [elem2 ...]',
+      python: 'r.lpush("log_hackeos", "Servidor_Arasaka", "Camara_Callejon")',
+      node: 'await redis.lpush("log_hackeos", "Servidor_Arasaka", "Camara_Callejon");'
+    },
+    'RPUSH': {
+      redis: 'RPUSH key element [elem2 ...]',
+      python: 'r.rpush("log_hackeos", "Camara_Callejon")',
+      node: 'await redis.rpush("log_hackeos", "Camara_Callejon");'
+    },
+    'LPOP': {
+      redis: 'LPOP key',
+      python: 'item = r.lpop("log_hackeos")',
+      node: 'const item = await redis.lpop("log_hackeos");'
+    },
+    'RPOP': {
+      redis: 'RPOP key',
+      python: 'item = r.rpop("log_hackeos")',
+      node: 'const item = await redis.rpop("log_hackeos");'
+    },
+    'LRANGE': {
+      redis: 'LRANGE key start stop',
+      python: 'logs = r.lrange("log_hackeos", 0, -1)',
+      node: 'const logs = await redis.lrange("log_hackeos", 0, -1);'
+    },
+    'LLEN': {
+      redis: 'LLEN key',
+      python: 'total = r.llen("log_hackeos")',
+      node: 'const total = await redis.llen("log_hackeos");'
+    },
+    'SADD': {
+      redis: 'SADD key member [mem2 ...]',
+      python: 'r.sadd("red_fantasma", "nodo_A", "nodo_B")',
+      node: 'await redis.sadd("red_fantasma", "nodo_A", "nodo_B");'
+    },
+    'SMEMBERS': {
+      redis: 'SMEMBERS key',
+      python: 'nodes = r.smembers("red_fantasma")',
+      node: 'const nodes = await redis.smembers("red_fantasma");'
+    },
+    'SREM': {
+      redis: 'SREM key member [mem2 ...]',
+      python: 'r.srem("red_fantasma", "nodo_A")',
+      node: 'await redis.srem("red_fantasma", "nodo_A");'
+    },
+    'SINTER': {
+      redis: 'SINTER key1 [key2 ...]',
+      python: 'crosspoints = r.sinter("red_fantasma", "red_corporativa")',
+      node: 'const cross = await redis.sinter("red_fantasma", "red_corporativa");'
+    },
+    'SUNION': {
+      redis: 'SUNION key1 [key2 ...]',
+      python: 'all_nodes = r.sunion("red_fantasma", "red_corporativa")',
+      node: 'const allNodes = await redis.sunion("red_fantasma", "red_corporativa");'
+    },
+    'SDIFF': {
+      redis: 'SDIFF key1 [key2 ...]',
+      python: 'safe_nodes = r.sdiff("red_fantasma", "red_corporativa")',
+      node: 'const safeNodes = await redis.sdiff("red_fantasma", "red_corporativa");'
+    },
+    'ZADD': {
+      redis: 'ZADD key score member',
+      python: 'r.zadd("recompensas", {"Maelstrom_Lider": 50000})',
+      node: 'await redis.zadd("recompensas", 50000, "Maelstrom_Lider");'
+    },
+    'ZRANGE': {
+      redis: 'ZRANGE key start stop [WITHSCORES]',
+      python: 'ranks = r.zrange("recompensas", 0, -1, withscores=True)',
+      node: 'const ranks = await redis.zrange("recompensas", 0, -1, "WITHSCORES");'
+    },
+    'ZREVRANGE': {
+      redis: 'ZREVRANGE key start stop [WITHSCORES]',
+      python: 'top = r.zrevrange("recompensas", 0, 2, withscores=True)',
+      node: 'const top = await redis.zrevrange("recompensas", 0, 2, "WITHSCORES");'
+    },
+    'ZSCORE': {
+      redis: 'ZSCORE key member',
+      python: 'score = r.zscore("recompensas", "Maelstrom_Lider")',
+      node: 'const score = await redis.zscore("recompensas", "Maelstrom_Lider");'
+    },
+    'ZRANK': {
+      redis: 'ZRANK key member',
+      python: 'pos = r.zrank("recompensas", "Maelstrom_Lider")',
+      node: 'const pos = await redis.zrank("recompensas", "Maelstrom_Lider");'
+    },
+    'DEL': {
+      redis: 'DEL key [key2 ...]',
+      python: 'r.delete("puerta_01")',
+      node: 'await redis.del("puerta_01");'
+    },
+    'EXISTS': {
+      redis: 'EXISTS key',
+      python: 'exists = r.exists("puerta_01")',
+      node: 'const exists = await redis.exists("puerta_01");'
+    },
+    'EXPIRE': {
+      redis: 'EXPIRE key seconds',
+      python: 'r.expire("sesion_hack", 30)',
+      node: 'await redis.expire("sesion_hack", 30);'
+    },
+    'TTL': {
+      redis: 'TTL key',
+      python: 'seconds = r.ttl("sesion_hack")',
+      node: 'const seconds = await redis.ttl("sesion_hack");'
+    },
+    'KEYS': {
+      redis: 'KEYS *',
+      python: 'keys = r.keys("*")',
+      node: 'const keys = await redis.keys("*");'
+    },
+    'FLUSHALL': {
+      redis: 'FLUSHALL',
+      python: 'r.flushall()',
+      node: 'await redis.flushall();'
+    }
+  };
+
+  const sdkTabs = document.querySelectorAll('.sdk-tab');
+
+  function applySdkLanguage(lang) {
+    sdkTabs.forEach(t => {
+      if (t.dataset.lang === lang) t.classList.add('active');
+      else t.classList.remove('active');
+    });
+
+    cmdCards.forEach(card => {
+      const cmdNameEl = card.querySelector('.cmd-card-name');
+      const syntaxEl = card.querySelector('.cmd-card-syntax');
+      const copyBtn = card.querySelector('.btn-copy-code');
+      if (!cmdNameEl || !syntaxEl) return;
+
+      const cmdName = cmdNameEl.textContent.trim().toUpperCase();
+      const translation = SDK_TRANSLATIONS[cmdName];
+      if (translation && translation[lang]) {
+        syntaxEl.textContent = translation[lang];
+        if (copyBtn) {
+          copyBtn.setAttribute('data-copy', translation[lang]);
+        }
+      }
+    });
+  }
+
+  sdkTabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      const lang = tab.dataset.lang || 'redis';
+      audio.playKeypress();
+      applySdkLanguage(lang);
+    });
+  });
+
+  // --------------------------------------------------------------------------
   // Initialization
   // --------------------------------------------------------------------------
   updateHUDStats();
   // Auto-seed initially for stunning first-load visual presentation
   seedDemoData();
+  checkMissions();
 
 })();

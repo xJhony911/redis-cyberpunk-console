@@ -59,14 +59,27 @@
           <button id="btn-theme-toggle" class="cyber-btn-mini btn-theme" title="Alternar estilo: Cyberpunk HUD vs Neón Dark Minimal">
             <span class="btn-icon">⚡</span> <span id="theme-label">TEMA: CYBERPUNK</span>
           </button>
+          <button id="btn-missions-toggle" class="cyber-btn-mini btn-missions" title="Protocolos de Entrenamiento Netrunner">
+            <span class="btn-icon">🎯</span> MISIONES (<span id="mission-progress-label">0/6</span>)
+          </button>
+          <button id="btn-benchmark" class="cyber-btn-mini btn-highlight" title="Ejecutar Benchmark de 100 operaciones en memoria">
+            <span class="btn-icon">🚀</span> BENCHMARK
+          </button>
           <button id="btn-sound-toggle" class="cyber-btn-mini" title="Alternar Efectos de Sonido Cyberpunk">
             <span class="btn-icon">🔊</span> <span id="sound-label">AUDIO: ON</span>
           </button>
           <button id="btn-seed-data" class="cyber-btn-mini btn-highlight" title="Cargar Datos Cyberpunk de Prueba">
             <span class="btn-icon">⚡</span> SEED DEMO
           </button>
-          <button id="btn-export-vault" class="cyber-btn-mini" title="Descargar backup de memoria (JSON / Redis CLI)">
+          <button id="btn-export-vault" class="cyber-btn-mini" title="Descargar backup de memoria (JSON)">
             <span class="btn-icon">💾</span> EXPORTAR
+          </button>
+          <button id="btn-import-vault" class="cyber-btn-mini" title="Restaurar memoria desde archivo JSON">
+            <span class="btn-icon">📥</span> IMPORTAR
+          </button>
+          <input type="file" id="file-import-vault" accept=".json" style="display:none">
+          <button id="btn-fullscreen" class="cyber-btn-mini" title="Modo Pantalla Completa">
+            <span class="btn-icon">⛶</span> FULLSCREEN
           </button>
           <button id="btn-flush-all" class="cyber-btn-mini btn-danger" title="Borrar toda la memoria (FLUSHALL)">
             <span class="btn-icon">⚠️</span> FLUSHALL
@@ -234,9 +247,17 @@
 
       <!-- Directory Toolbar (Search & Filter Chips) -->
       <div class="dir-toolbar">
-        <div class="dir-search-box">
-          <span class="search-symbol">&#128269;</span>
-          <input type="text" id="cmd-dir-search" placeholder="Filtrar por comando, sintaxis o función (ej. GET, DEL, ZADD, HSET, DOCKER)..." autocomplete="off">
+        <div class="dir-toolbar-top">
+          <div class="dir-search-box">
+            <span class="search-symbol">&#128269;</span>
+            <input type="text" id="cmd-dir-search" placeholder="Filtrar por comando, sintaxis o función (ej. GET, DEL, ZADD, HSET, DOCKER)..." autocomplete="off">
+          </div>
+          <div class="sdk-lang-selector">
+            <span class="sdk-label">LENGUAJE:</span>
+            <button class="sdk-tab active" data-lang="redis">REDIS CLI</button>
+            <button class="sdk-tab" data-lang="python">PYTHON (redis-py)</button>
+            <button class="sdk-tab" data-lang="node">NODE.JS (ioredis)</button>
+          </div>
         </div>
         <div class="dir-filter-chips">
           <button class="dir-filter-chip active" data-cat="all">TODOS</button>
@@ -1025,6 +1046,40 @@
       </div>
     </footer>
 
+  </div>
+
+  <!-- Cyber-Ops Missions Training Modal -->
+  <div id="modal-missions" class="cyber-modal" style="display: none;">
+    <div class="cyber-modal-backdrop" id="modal-missions-backdrop"></div>
+    <div class="cyber-modal-window cyber-panel">
+      <div class="cyber-modal-header">
+        <div class="modal-title-box">
+          <span class="modal-tag">PROTOCOLO DE ADIESTRAMIENTO</span>
+          <h2 class="modal-glitch-title glitch-text" data-text="CYBER-OPS // MISIONES NETRUNNER">CYBER-OPS // MISIONES NETRUNNER</h2>
+          <p class="modal-subtext">Cumple los 6 objetivos inyectando comandos Redis en la terminal. El sistema valida la memoria física en tiempo real.</p>
+        </div>
+        <button id="btn-close-missions" class="modal-close-btn" title="Cerrar modal">&times;</button>
+      </div>
+
+      <div class="mission-xp-tracker">
+        <div class="xp-bar-label">
+          <span>RANGO ACTUAL: <strong id="netrunner-rank" class="text-neon-cyan">NOVATO // TIER 1</strong></span>
+          <span id="netrunner-xp" class="text-neon-green">0 / 600 XP (0/6 Misiones)</span>
+        </div>
+        <div class="cyber-meter-bar">
+          <div id="mission-progress-bar" class="cyber-meter-fill" style="width: 0%;"></div>
+        </div>
+      </div>
+
+      <div class="missions-grid" id="missions-grid">
+        <!-- Rendered dynamically via JS -->
+      </div>
+
+      <div class="cyber-modal-footer">
+        <button id="btn-reset-missions" class="cyber-link-btn" title="Restablecer misiones">[REINICIAR PROGRESO]</button>
+        <button id="btn-done-missions" class="cyber-btn-mini btn-highlight">ENTENDIDO // CONTINUAR</button>
+      </div>
+    </div>
   </div>
 
   <script src="app.js"></script>
